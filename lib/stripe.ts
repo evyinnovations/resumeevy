@@ -173,7 +173,8 @@ export async function createCheckoutSession(
     cancel_url: cancelUrl,
     metadata: { userId },
     billing_address_collection: "auto",
-    payment_method_collection: "always",
+    // payment_method_collection only valid for subscription mode
+    ...(isLifetime ? {} : { payment_method_collection: "always" as const }),
   });
 
   return session.url!;
