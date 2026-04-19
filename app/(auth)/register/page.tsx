@@ -53,20 +53,6 @@ function RegisterForm() {
     formState: { errors },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
-  const startCheckout = async (planKey: string) => {
-    const res = await fetch("/api/stripe/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planKey }),
-    });
-    const data = await res.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      router.push("/billing");
-    }
-  };
-
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     setError(null);
@@ -84,6 +70,8 @@ function RegisterForm() {
         return;
       }
 
+      // Sign in, then do a full-page navigation so the session cookie is
+      // guaranteed to be set before the checkout-redirect API reads it.
       await signIn("credentials", {
         email: data.email,
         password: data.password,
@@ -91,9 +79,9 @@ function RegisterForm() {
       });
 
       if (planKey) {
-        await startCheckout(planKey);
+        window.location.href = `/api/stripe/checkout-redirect?plan=${planParam}`;
       } else {
-        router.push("/billing");
+        window.location.href = "/billing";
       }
     } catch {
       setError("Something went wrong. Please try again.");
@@ -104,7 +92,7 @@ function RegisterForm() {
 
   const handleSocial = async (provider: string) => {
     setSocialLoading(provider);
-    const callbackUrl = planKey ? `/api/stripe/checkout-redirect?plan=${planKey}` : "/billing";
+    const callbackUrl = planParam ? `/api/stripe/checkout-redirect?plan=${planParam}` : "/billing";
     await signIn(provider, { callbackUrl });
   };
 

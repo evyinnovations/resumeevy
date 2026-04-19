@@ -47,6 +47,10 @@ export const authConfig = {
       }
 
       if (isAuthRoute && isLoggedIn) {
+        const plan = nextUrl.searchParams.get("plan");
+        if (plan) {
+          return Response.redirect(new URL(`/api/stripe/checkout-redirect?plan=${plan}`, nextUrl));
+        }
         return Response.redirect(new URL("/dashboard", nextUrl));
       }
 

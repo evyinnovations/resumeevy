@@ -11,7 +11,9 @@ const PLAN_MAP: Record<string, PlanKey> = {
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id || !session.user.email) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    const planParam = req.nextUrl.searchParams.get("plan");
+    const back = planParam ? `/register?plan=${planParam}` : "/register";
+    return NextResponse.redirect(new URL(`/login?callbackUrl=${encodeURIComponent(back)}`, req.url));
   }
 
   const planParam = req.nextUrl.searchParams.get("plan");
