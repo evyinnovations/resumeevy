@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
@@ -29,8 +29,18 @@ const passwordRequirements = [
   { label: "One number", test: (p: string) => /[0-9]/.test(p) },
 ];
 
-export default function RegisterPage() {
+const PLAN_MAP: Record<string, string> = {
+  monthly: "MONTHLY",
+  yearly: "YEARLY",
+  lifetime: "LIFETIME",
+};
+
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const planParam = searchParams.get("plan");
+  const planKey = planParam ? PLAN_MAP[planParam.toLowerCase()] : null;
+
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -42,6 +52,20 @@ export default function RegisterPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
+
+  const startCheckout = async (planKey: string) => {
+    const res = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planKey }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      router.push("/billing");
+    }
+  };
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -66,7 +90,11 @@ export default function RegisterPage() {
         redirect: false,
       });
 
-      router.push("/billing?welcome=1");
+      if (planKey) {
+        await startCheckout(planKey);
+      } else {
+        router.push("/billing");
+      }
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -76,7 +104,8 @@ export default function RegisterPage() {
 
   const handleSocial = async (provider: string) => {
     setSocialLoading(provider);
-    await signIn(provider, { callbackUrl: "/billing?welcome=1" });
+    const callbackUrl = planKey ? `/api/stripe/checkout-redirect?plan=${planKey}` : "/billing";
+    await signIn(provider, { callbackUrl });
   };
 
   return (
@@ -275,5 +304,14 @@ export default function RegisterPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+import { Suspense } from "react";
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
   );
 }

@@ -36,8 +36,8 @@ export async function POST(req: NextRequest) {
       priceId,
       planKey as PlanKey,
       session.user.id,
-      `${appUrl}/billing?success=1`,
-      `${appUrl}/billing?canceled=1`,
+      `${appUrl}/dashboard`,
+      `${appUrl}/billing`,
       promotionCodeId || null
     );
 
