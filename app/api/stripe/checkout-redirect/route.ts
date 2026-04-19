@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       session.user.name || undefined
     );
 
+    const promoId = req.nextUrl.searchParams.get("promoId") || null;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const url = await createCheckoutSession(
       customerId,
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
       session.user.id,
       `${appUrl}/dashboard`,
       `${appUrl}/billing`,
+      promoId,
     );
 
     return NextResponse.redirect(url);

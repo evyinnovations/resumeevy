@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CreditCard, Check, Zap, Calendar, CalendarDays, Crown,
+  CreditCard, Check, Calendar, CalendarDays, Crown,
   ArrowRight, ExternalLink, Loader2, Gift, Sparkles,
   Tag, X, CheckCircle2,
 } from "lucide-react";
-import { PLANS } from "@/lib/stripe";
+import { PLAN_DISPLAY, PLAN_ORDER, type PlanKey } from "@/lib/plans";
 import { formatDate } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 
@@ -24,22 +24,15 @@ interface BillingProps {
   canceledParam?: boolean;
 }
 
-const PLAN_META = {
-  FREE:     { icon: Zap,         color: "border-slate-200",  gradient: "from-slate-400 to-slate-500" },
-  MONTHLY:  { icon: Calendar,    color: "border-brand-200",  gradient: "from-brand-600 to-brand-500" },
-  YEARLY:   { icon: CalendarDays,color: "border-violet-300", gradient: "from-violet-600 to-brand-500" },
-  LIFETIME: { icon: Crown,       color: "border-yellow-300", gradient: "from-yellow-500 to-orange-500" },
-} as const;
-
 export function BillingDashboard({ subscription, user, successParam, canceledParam }: BillingProps) {
-  const [loading, setLoading] = useState<string | null>(null);
   const [promoCode, setPromoCode] = useState("");
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoState, setPromoState] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
   const [promoData, setPromoData] = useState<{ id: string; discount: string } | null>(null);
 
-  const currentPlan = (subscription?.plan || "FREE") as keyof typeof PLANS;
+  const currentPlan = (subscription?.plan || "FREE") as PlanKey;
   const isTrialing = subscription?.status?.toUpperCase() === "TRIALING";
+  const currentIdx = PLAN_ORDER.indexOf(currentPlan);
 
   useEffect(() => {
     if (successParam) {
@@ -83,29 +76,15 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
     setPromoOpen(false);
   };
 
-  const handleUpgrade = async (planKey: string) => {
-    setLoading(planKey);
-    try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          planKey,
-          promotionCodeId: promoData?.id ?? null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      if (data.url) window.location.href = data.url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to start checkout");
-    } finally {
-      setLoading(null);
-    }
+  // Full-page navigation to the server-side checkout-redirect route.
+  // Avoids fetch → session timing issues and stripe package in client bundle.
+  const handleUpgrade = (planKey: PlanKey) => {
+    const params = new URLSearchParams({ plan: planKey.toLowerCase() });
+    if (promoData?.id) params.set("promoId", promoData.id);
+    window.location.href = `/api/stripe/checkout-redirect?${params}`;
   };
 
   const handlePortal = async () => {
-    setLoading("portal");
     try {
       const res = await fetch("/api/stripe/portal", { method: "POST" });
       const data = await res.json();
@@ -113,21 +92,15 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
       if (data.url) window.location.href = data.url;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to open portal");
-    } finally {
-      setLoading(null);
     }
   };
 
-  const planOrder: (keyof typeof PLANS)[] = ["FREE", "MONTHLY", "YEARLY", "LIFETIME"];
-  const currentIdx = planOrder.indexOf(currentPlan);
-
   const paidPlans = (["MONTHLY", "YEARLY", "LIFETIME"] as const).map((key) => ({
     key,
-    ...PLANS[key],
-    ...PLAN_META[key],
+    ...PLAN_DISPLAY[key],
   }));
 
-  const CurrentIcon = PLAN_META[currentPlan]?.icon ?? Zap;
+  const CurrentPlanIcon = PLAN_DISPLAY[currentPlan]?.icon;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -143,61 +116,60 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
       </div>
 
       {/* Current plan card — only shown when on a paid plan */}
-      {currentPlan !== "FREE" && <motion.div
-        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-        className="glass-card rounded-2xl p-6 border border-slate-200"
-      >
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${PLAN_META[currentPlan]?.gradient} flex items-center justify-center`}>
-              <CurrentIcon className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <div className="font-bold text-slate-900 text-lg">{PLANS[currentPlan]?.name ?? "Free"} Plan</div>
-              <div className="flex items-center gap-2 mt-0.5">
-                {isTrialing ? (
-                  <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">
-                    Free Trial Active
-                  </span>
-                ) : subscription?.status?.toUpperCase() === "ACTIVE" ? (
-                  <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
-                    Active
-                  </span>
-                ) : (
-                  <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">
-                    {subscription?.status || "Free"}
-                  </span>
-                )}
-                {subscription?.currentPeriodEnd && (
-                  <span className="text-xs text-slate-400">
-                    {subscription.cancelAtPeriodEnd ? "Cancels" : isTrialing ? "Trial ends" : "Renews"}{" "}
-                    {formatDate(subscription.currentPeriodEnd)}
-                  </span>
-                )}
+      {currentPlan !== "FREE" && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          className="glass-card rounded-2xl p-6 border border-slate-200"
+        >
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${PLAN_DISPLAY[currentPlan]?.gradient} flex items-center justify-center`}>
+                {CurrentPlanIcon && <CurrentPlanIcon className="w-6 h-6 text-white" />}
+              </div>
+              <div>
+                <div className="font-bold text-slate-900 text-lg">{PLAN_DISPLAY[currentPlan]?.name} Plan</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {isTrialing ? (
+                    <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">
+                      Free Trial Active
+                    </span>
+                  ) : subscription?.status?.toUpperCase() === "ACTIVE" ? (
+                    <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                      Active
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">
+                      {subscription?.status}
+                    </span>
+                  )}
+                  {subscription?.currentPeriodEnd && (
+                    <span className="text-xs text-slate-400">
+                      {subscription.cancelAtPeriodEnd ? "Cancels" : isTrialing ? "Trial ends" : "Renews"}{" "}
+                      {formatDate(subscription.currentPeriodEnd)}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {currentPlan !== "FREE" && (
             <button
               onClick={handlePortal}
-              disabled={loading === "portal"}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-all cursor-pointer"
             >
-              {loading === "portal" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+              <ExternalLink className="w-4 h-4" />
               Manage Billing
             </button>
-          )}
-        </div>
+          </div>
 
-        <div className="mt-5 pt-5 border-t border-slate-100 grid sm:grid-cols-2 gap-2">
-          {PLANS[currentPlan]?.features.map((f) => (
-            <div key={f} className="flex items-center gap-2 text-sm text-slate-600">
-              <Check className="w-4 h-4 text-emerald-500 shrink-0" /> {f}
-            </div>
-          ))}
-        </div>
-      </motion.div>}
+          <div className="mt-5 pt-5 border-t border-slate-100 grid sm:grid-cols-2 gap-2">
+            {PLAN_DISPLAY[currentPlan]?.features.map((f) => (
+              <div key={f} className="flex items-center gap-2 text-sm text-slate-600">
+                <Check className="w-4 h-4 text-emerald-500 shrink-0" /> {f}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Pricing plans */}
       {currentPlan !== "LIFETIME" && (
@@ -205,7 +177,7 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
           <h2 className="text-lg font-bold text-slate-900 mb-2">Choose a plan</h2>
           <p className="text-sm text-slate-500 mb-4">All paid plans include a free trial — card required upfront, charged automatically after trial ends</p>
 
-          {/* ── Promo code ────────────────────────────────────────────────────── */}
+          {/* Promo code */}
           <div className="mb-6">
             {!promoOpen && promoState !== "valid" && (
               <button
@@ -283,7 +255,7 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
           <div className="grid md:grid-cols-3 gap-5">
             {paidPlans.map(({ key, name, displayPrice, period, trial, badge, description, features, gradient, color }, i) => {
               const isCurrent = currentPlan === key;
-              const isUpgrade = planOrder.indexOf(key) > currentIdx;
+              const isUpgrade = PLAN_ORDER.indexOf(key) > currentIdx;
               const isYearly = key === "YEARLY";
 
               return (
@@ -306,7 +278,7 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
                     <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center`}>
                       {key === "MONTHLY" && <Calendar className="w-4 h-4 text-white" />}
                       {key === "YEARLY"  && <Sparkles className="w-4 h-4 text-white" />}
-                      {key === "LIFETIME"&& <Crown className="w-4 h-4 text-white" />}
+                      {key === "LIFETIME" && <Crown className="w-4 h-4 text-white" />}
                     </div>
                     <span className="font-bold text-slate-900">{name}</span>
                     {isCurrent && (
@@ -340,16 +312,14 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
 
                   <button
                     onClick={() => handleUpgrade(key)}
-                    disabled={isCurrent || loading === key || !isUpgrade}
+                    disabled={isCurrent || !isUpgrade}
                     className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                       isYearly || key === "LIFETIME"
                         ? "bg-gradient-to-r from-brand-700 to-brand-500 text-white hover:shadow-glow-sm"
-                        : "bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700"
+                        : "bg-brand-600 hover:bg-brand-700 text-white"
                     }`}
                   >
-                    {loading === key ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : isCurrent ? "Current Plan" : (
+                    {isCurrent ? "Current Plan" : (
                       <>
                         {trial ? "Start Free Trial" : `Get ${name}`}
                         <ArrowRight className="w-4 h-4" />
