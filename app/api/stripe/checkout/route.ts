@@ -9,13 +9,19 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { priceId, planKey, promotionCodeId } = await req.json();
-    if (!priceId || !planKey) {
-      return NextResponse.json({ error: "Price ID and plan key required" }, { status: 400 });
+    const { planKey, promotionCodeId } = await req.json();
+    if (!planKey) {
+      return NextResponse.json({ error: "Plan key required" }, { status: 400 });
     }
 
-    if (!PLANS[planKey as PlanKey]) {
+    const plan = PLANS[planKey as PlanKey];
+    if (!plan) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
+    }
+
+    const priceId = plan.priceId;
+    if (!priceId) {
+      return NextResponse.json({ error: "Plan has no price configured" }, { status: 400 });
     }
 
     const customerId = await createOrRetrieveCustomer(

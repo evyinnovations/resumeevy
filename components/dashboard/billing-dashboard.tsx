@@ -84,15 +84,12 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
   };
 
   const handleUpgrade = async (planKey: string) => {
-    const plan = PLANS[planKey as keyof typeof PLANS];
-    if (!plan || !plan.priceId) return;
     setLoading(planKey);
     try {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          priceId: plan.priceId,
           planKey,
           promotionCodeId: promoData?.id ?? null,
         }),
@@ -145,8 +142,8 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
         <p className="text-slate-500 mt-1 ml-14 text-sm">Manage your subscription and payment details</p>
       </div>
 
-      {/* Current plan card */}
-      <motion.div
+      {/* Current plan card — only shown when on a paid plan */}
+      {currentPlan !== "FREE" && <motion.div
         initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
         className="glass-card rounded-2xl p-6 border border-slate-200"
       >
@@ -200,7 +197,7 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
             </div>
           ))}
         </div>
-      </motion.div>
+      </motion.div>}
 
       {/* Pricing plans */}
       {currentPlan !== "LIFETIME" && (
