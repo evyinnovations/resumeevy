@@ -66,7 +66,7 @@ export default function RegisterPage() {
         redirect: false,
       });
 
-      router.push("/dashboard?welcome=1");
+      router.push("/billing?welcome=1");
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -76,7 +76,7 @@ export default function RegisterPage() {
 
   const handleSocial = async (provider: string) => {
     setSocialLoading(provider);
-    await signIn(provider, { callbackUrl: "/dashboard?welcome=1" });
+    await signIn(provider, { callbackUrl: "/billing?welcome=1" });
   };
 
   return (

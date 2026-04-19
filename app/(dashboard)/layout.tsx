@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
+import prisma from "@/lib/prisma";
 
 export default async function DashboardLayout({
   children,
@@ -10,6 +11,16 @@ export default async function DashboardLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: (session.user as { id: string }).id },
+  });
+
+  const hasActivePlan = subscription && subscription.plan !== "FREE" &&
+    ["ACTIVE", "TRIALING"].includes(subscription.status);
+
+  const role = (session.user as { role?: string }).role;
+  if (!hasActivePlan && role !== "ADMIN") redirect("/billing");
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
