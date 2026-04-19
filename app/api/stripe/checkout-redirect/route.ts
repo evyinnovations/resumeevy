@@ -19,8 +19,14 @@ export async function GET(req: NextRequest) {
   const planParam = req.nextUrl.searchParams.get("plan");
   const planKey = planParam ? PLAN_MAP[planParam.toLowerCase()] : null;
 
-  if (!planKey || !PLANS[planKey]?.priceId) {
-    return NextResponse.redirect(new URL("/billing", req.url));
+  if (!planKey) {
+    return NextResponse.redirect(new URL("/billing?error=invalid-plan", req.url));
+  }
+
+  const priceId = PLANS[planKey]?.priceId;
+  if (!priceId) {
+    console.error(`[checkout-redirect] No priceId for plan ${planKey}. Check STRIPE_PRICE_${planKey} env var.`);
+    return NextResponse.redirect(new URL(`/billing?error=no-price-${planKey.toLowerCase()}`, req.url));
   }
 
   try {
@@ -34,7 +40,7 @@ export async function GET(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const url = await createCheckoutSession(
       customerId,
-      PLANS[planKey].priceId!,
+      priceId,
       planKey,
       session.user.id,
       `${appUrl}/dashboard`,
@@ -43,7 +49,9 @@ export async function GET(req: NextRequest) {
     );
 
     return NextResponse.redirect(url);
-  } catch {
-    return NextResponse.redirect(new URL("/billing", req.url));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[checkout-redirect] Stripe error for plan ${planKey}:`, msg);
+    return NextResponse.redirect(new URL(`/billing?error=${encodeURIComponent(msg)}`, req.url));
   }
 }

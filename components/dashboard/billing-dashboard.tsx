@@ -22,9 +22,10 @@ interface BillingProps {
   user: { id: string; name?: string | null; email?: string | null };
   successParam?: boolean;
   canceledParam?: boolean;
+  errorParam?: string;
 }
 
-export function BillingDashboard({ subscription, user, successParam, canceledParam }: BillingProps) {
+export function BillingDashboard({ subscription, user, successParam, canceledParam, errorParam }: BillingProps) {
   const [promoCode, setPromoCode] = useState("");
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoState, setPromoState] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
@@ -40,6 +41,14 @@ export function BillingDashboard({ subscription, user, successParam, canceledPar
       window.history.replaceState({}, "", "/billing");
     } else if (canceledParam) {
       toast.error("Payment canceled. No charge was made.");
+      window.history.replaceState({}, "", "/billing");
+    } else if (errorParam) {
+      const msg = errorParam.startsWith("no-price-")
+        ? `Stripe price not configured for ${errorParam.replace("no-price-", "").toUpperCase()} plan. Check env vars.`
+        : errorParam === "invalid-plan"
+        ? "Invalid plan selected."
+        : `Checkout error: ${errorParam}`;
+      toast.error(msg);
       window.history.replaceState({}, "", "/billing");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { BillingDashboard } from "@/components/dashboard/billing-dashboard";
 
 interface PageProps {
-  searchParams: Promise<{ success?: string; canceled?: string }>;
+  searchParams: Promise<{ success?: string; canceled?: string; error?: string }>;
 }
 
 export default async function BillingPage({ searchParams }: PageProps) {
@@ -21,6 +21,7 @@ export default async function BillingPage({ searchParams }: PageProps) {
       user={session.user}
       successParam={params.success === "1"}
       canceledParam={params.canceled === "1"}
+      errorParam={params.error}
     />
   );
 }
