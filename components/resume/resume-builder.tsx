@@ -6,10 +6,11 @@ import {
   Save, Download, Eye, Palette, Sparkles, Loader2, CheckCircle,
   ChevronRight, ChevronLeft, PlusCircle, Trash2, GripVertical,
   User, Briefcase, GraduationCap, Code, FolderOpen, Award,
-  FileText, Wand2
+  FileText, Wand2, Lock
 } from "lucide-react";
 import { debounce, generateId, cn } from "@/lib/utils";
 import { RESUME_TEMPLATES } from "@/lib/templates";
+import { UpgradeModal } from "@/components/shared/upgrade-modal";
 
 interface ResumeBuilderProps {
   resume: {
@@ -26,6 +27,7 @@ interface ResumeBuilderProps {
     atsScore: number | null;
   } | null;
   userId: string;
+  subscription?: { plan: string; status: string } | null;
 }
 
 type Section = "personal" | "summary" | "experience" | "education" | "skills" | "projects" | "certifications";
@@ -44,7 +46,7 @@ function defaultPersonalInfo() {
   return { name: "", email: "", phone: "", location: "", linkedin: "", github: "", website: "", title: "" };
 }
 
-export function ResumeBuilder({ resume, userId }: ResumeBuilderProps) {
+export function ResumeBuilder({ resume, userId, subscription }: ResumeBuilderProps) {
   const [title, setTitle] = useState(resume?.title || "Untitled Resume");
   const [templateId, setTemplateId] = useState(resume?.templateId || "modern-minimal");
   const [activeSection, setActiveSection] = useState<Section>("personal");
@@ -54,6 +56,16 @@ export function ResumeBuilder({ resume, userId }: ResumeBuilderProps) {
   const [saved, setSaved] = useState(false);
   const [resumeId, setResumeId] = useState(resume?.id || "");
   const [aiLoading, setAiLoading] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const isPro = subscription && subscription.plan !== "FREE" && ["ACTIVE", "TRIALING"].includes(subscription.status);
+
+  const handleSelectTemplate = (id: string) => {
+    const tpl = RESUME_TEMPLATES.find((t) => t.id === id);
+    if (tpl?.isPremium && !isPro) { setShowUpgrade(true); return; }
+    setTemplateId(id);
+    setShowTemplates(false);
+  };
 
   // Form state
   const [personalInfo, setPersonalInfo] = useState<Record<string, string>>(
@@ -145,6 +157,12 @@ export function ResumeBuilder({ resume, userId }: ResumeBuilderProps) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-4">
+      <UpgradeModal
+        open={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        title="Pro template"
+        description="This template is exclusive to Pro subscribers. Upgrade to access all premium templates."
+      />
       {/* Header */}
       <div className="flex items-center gap-4 flex-wrap">
         <input
@@ -197,7 +215,7 @@ export function ResumeBuilder({ resume, userId }: ResumeBuilderProps) {
               {RESUME_TEMPLATES.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => { setTemplateId(t.id); setShowTemplates(false); }}
+                  onClick={() => handleSelectTemplate(t.id)}
                   className={cn(
                     "group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer",
                     templateId === t.id ? "border-brand-500 shadow-md" : "border-slate-200 hover:border-slate-400"
@@ -212,6 +230,11 @@ export function ResumeBuilder({ resume, userId }: ResumeBuilderProps) {
                       <div className="h-1 rounded-full bg-slate-200 w-full" />
                       <div className="h-1 rounded-full bg-slate-200 w-2/3" />
                     </div>
+                    {t.isPremium && !isPro && (
+                      <div className="absolute top-1 right-1">
+                        <Lock className="w-3 h-3 text-yellow-600" />
+                      </div>
+                    )}
                   </div>
                   <div className="p-1 text-center text-[9px] text-slate-500 bg-slate-50">{t.name}</div>
                 </button>

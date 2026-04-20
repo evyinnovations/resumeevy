@@ -10,11 +10,19 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const isNew = id === "new";
 
+  const [subscription] = await Promise.all([
+    prisma.subscription.findUnique({
+      where: { userId: session.user.id },
+      select: { plan: true, status: true },
+    }),
+  ]);
+
   if (isNew) {
     return (
       <ResumeBuilder
         resume={null}
         userId={session.user.id}
+        subscription={subscription}
       />
     );
   }
@@ -45,6 +53,7 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
         atsScore: resume.atsScore,
       }}
       userId={session.user.id}
+      subscription={subscription}
     />
   );
 }

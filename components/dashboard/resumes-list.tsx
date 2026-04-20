@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   FileText, PlusCircle, Wand2, Download, Trash2, Edit,
-  GitBranch, Clock, TrendingUp, Sparkles
+  GitBranch, Clock, TrendingUp, Sparkles, FileType
 } from "lucide-react";
 import { formatDate, getAtsScoreColor, getAtsScoreLabel } from "@/lib/utils";
 import { useState } from "react";
@@ -208,6 +208,13 @@ export function ResumesList({
                       title="Download PDF"
                     >
                       <Download className="w-4 h-4" />
+                    </a>
+                    <a
+                      href={`/api/resumes/${resume.id}/download?format=docx`}
+                      className="p-2 rounded-xl hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-all cursor-pointer"
+                      title="Download Word (.docx)"
+                    >
+                      <FileType className="w-4 h-4" />
                     </a>
                     <button
                       onClick={() => handleDelete(resume.id)}
