@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import { sendVerificationEmail } from "@/lib/email";
+import { sendVerificationEmail, sendWelcomeEmail } from "@/lib/email";
 import crypto from "crypto";
 
 const schema = z.object({
@@ -54,8 +54,9 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Send verification email (non-blocking)
+    // Send emails (non-blocking)
     sendVerificationEmail(email, name, token).catch(console.error);
+    sendWelcomeEmail(email, name).catch(console.error);
 
     return NextResponse.json({ message: "Account created successfully" }, { status: 201 });
   } catch (error) {

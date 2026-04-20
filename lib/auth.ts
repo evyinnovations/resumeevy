@@ -114,6 +114,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           status: "ACTIVE",
         },
       });
+      // Send welcome email (non-blocking)
+      if (user.email) {
+        const { sendWelcomeEmail } = await import("@/lib/email");
+        sendWelcomeEmail(user.email, user.name || "there").catch(console.error);
+      }
     },
   },
 });
