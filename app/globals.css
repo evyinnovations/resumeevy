@@ -67,9 +67,6 @@
     color: #0F1235;
   }
 
-  * {
-    cursor: none !important;
-  }
 }
 
 @layer components {

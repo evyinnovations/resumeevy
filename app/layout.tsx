@@ -3,7 +3,6 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Providers } from "@/components/shared/providers";
-import { CustomCursor } from "@/components/shared/custom-cursor";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -74,7 +73,6 @@ export default function RootLayout({
     <html lang="en" className={`${plusJakartaSans.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-white font-sans antialiased cursor-none">
         <Providers>
-          <CustomCursor />
           {children}
           <Toaster />
         </Providers>
