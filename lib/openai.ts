@@ -139,7 +139,7 @@ export async function tailorResume(
   // Trim job description to ~3000 chars to stay within token limits
   const jdTrimmed = jobDescription.slice(0, 3000);
 
-  const systemPrompt = `You are an expert resume writer and ATS optimization specialist.
+  const systemPrompt = `You are an expert resume writer and ATS optimization specialist. Your writing sounds like a real human professional wrote it — never like AI output.
 
 Rules:
 - Keep personalInfo (name, email, phone, location, linkedin, github, website, title) exactly as-is
@@ -150,7 +150,16 @@ Rules:
 - Add missing JD keywords into existing AND new bullets naturally
 - Keep bullets concise, impact-driven, with numbers/metrics where possible
 - Add any missing skills from the JD to the skills section
-- Return ONLY valid JSON`;
+- Return ONLY valid JSON
+
+CRITICAL — Human writing style rules (violating these makes the resume unacceptable):
+- NEVER use these words/phrases: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable solutions, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative
+- Use simple direct verbs instead: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved
+- Vary sentence length — mix short punchy bullets with slightly longer ones
+- Include one specific detail per bullet (a team size, a number, a tool name) — not vague claims
+- Write like a real person describing their job to a friend, then cleaned up for a resume
+- Avoid corporate buzzword stacking — max one "impressive" word per bullet
+- Numbers and % make bullets human — use them wherever plausible`;
 
   const userPrompt = `Job Title: ${jobTitle}
 Job Description: ${jdTrimmed}
@@ -234,9 +243,15 @@ export async function getSectionSuggestion(
   content: string,
   context?: string
 ): Promise<string[]> {
-  const prompt = `You are an expert resume writer. Improve this ${section} section.
+  const prompt = `You are a professional resume writer. Rewrite this ${section} section to sound like a real human professional wrote it — not AI.
 ${context ? `Target role: ${context}` : ""}
 Current content: ${content}
+
+Rules:
+- Natural, varied sentence structure — not templated
+- No buzzwords: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, robust, innovative, dynamic, passionate, results-driven, thought leader, holistic, seamlessly, proactively, transformative
+- Simple direct verbs, specific details, honest tone
+- Reads like the person wrote it themselves, cleaned up
 
 Return ONLY a JSON array of 3 improved versions:
 ["version1", "version2", "version3"]`;
@@ -306,12 +321,15 @@ export async function generateResumeFromScratch(input: GenerateResumeInput): Pro
   const { personalInfo, targetRole, experienceLevel } = input;
   const cfg = LEVEL_CONFIG[experienceLevel];
 
-  const systemPrompt = `You are a world-class resume writer and ATS specialist. You create highly realistic, ATS-optimized resumes tailored to specific roles and experience levels. Every resume you write:
-- Uses strong action verbs and quantified achievements (%, $, numbers)
-- Passes ATS with proper keywords for the target role
-- Has a natural progression of responsibilities matching the experience level
-- Includes realistic company names, technologies, and dates
-- Never uses generic filler phrases
+  const systemPrompt = `You are a professional resume writer. You write resumes that sound like a real human professional wrote them — not AI. Every resume you write:
+- Uses simple, direct action verbs with real numbers (%, $, team size, time saved)
+- Has natural, varied sentence length — not every bullet follows the same template
+- Sounds like the person described their own job, then cleaned it up for a resume
+- Passes ATS with proper keywords woven in naturally
+- Has realistic company names, tech stacks, and career progression
+- NEVER uses: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable solutions, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative
+- Instead uses: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved, owned, shipped
+- Includes one specific concrete detail per bullet — a number, a tool, a team size, a deadline
 Return ONLY valid JSON.`;
 
   const userPrompt = `Create a complete, realistic ATS-optimized resume for:
@@ -327,16 +345,18 @@ Experience Level: ${cfg.label} (${cfg.years})
 
 Requirements:
 - Generate ${cfg.roles} realistic past job(s) with ${cfg.bulletsPerRole} bullet points each
-- Each bullet must be impact-driven with a metric (e.g., "Reduced API latency by 40%")
+- Each bullet must sound human-written with one concrete detail (e.g., "Cut API response time from 800ms to 120ms by switching to Redis caching")
+- Vary bullet length — some short (8 words), some longer (15 words) — never all the same
 - For fresher: use internships, academic projects, part-time roles
 - For junior/mid: realistic company progression with growing responsibilities
-- For senior/lead: include leadership, architecture decisions, team mentoring
-- Summary: 3-4 sentences, keyword-rich, tailored to ${targetRole}
+- For senior/lead: include leadership, architecture decisions, team mentoring — described plainly
+- Summary: 2-3 sentences, natural-sounding, first person implied but no "I", no buzzwords
 - Skills: group by category (e.g., Languages, Frameworks, Tools, Cloud), include 6-10 items per group
 - Certifications: include 2-3 relevant real certifications for this role/level
-- Projects: include 2 relevant projects with tech stack
+- Projects: include 2 relevant projects with tech stack — describe what it actually does, not vague
 - Education: realistic degree relevant to the role
 - Use realistic dates (end date of last job = present, work backwards)
+- BANNED words in all output: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, robust, innovative, dynamic, passionate, results-driven, thought leader, holistic, seamlessly, proactively, transformative
 
 Return this exact JSON structure:
 {
