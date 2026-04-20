@@ -25,19 +25,23 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
 
   if (!resume) notFound();
 
+  const toArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
   return (
     <ResumeBuilder
       resume={{
         id: resume.id,
         title: resume.title,
         templateId: resume.templateId,
-        personalInfo: resume.personalInfo as unknown as Record<string, string>,
+        personalInfo: (resume.personalInfo && typeof resume.personalInfo === "object" && !Array.isArray(resume.personalInfo)
+          ? resume.personalInfo
+          : {}) as Record<string, string>,
         summary: resume.summary || "",
-        experience: resume.experience as unknown as unknown[],
-        education: resume.education as unknown as unknown[],
-        skills: resume.skills as unknown as unknown[],
-        projects: resume.projects as unknown as unknown[],
-        certifications: resume.certifications as unknown as unknown[],
+        experience: toArray(resume.experience),
+        education: toArray(resume.education),
+        skills: toArray(resume.skills),
+        projects: toArray(resume.projects),
+        certifications: toArray(resume.certifications),
         atsScore: resume.atsScore,
       }}
       userId={session.user.id}
