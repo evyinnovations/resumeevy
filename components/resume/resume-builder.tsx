@@ -265,7 +265,7 @@ export function ResumeBuilder({ resume, userId, subscription }: ResumeBuilderPro
 
           {/* ATS Score */}
           <div className="mt-6 p-4 glass-card rounded-2xl">
-            <div className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">ATS Score</div>
+            <div className="text-xs text-slate-800 mb-2 font-medium uppercase tracking-wide">ATS Score</div>
             <div className="text-3xl font-black text-brand-700">{resume?.atsScore ?? "--"}</div>
             <div className="text-xs text-slate-400 mt-1">Run tailor to update</div>
             {resumeId && (
@@ -375,7 +375,7 @@ function PersonalInfoSection({ data, onChange }: {
       <div className="grid grid-cols-2 gap-4">
         {fields.map(({ key, label, placeholder, span }) => (
           <div key={key} className={span === 2 ? "col-span-2" : "col-span-2 sm:col-span-1"}>
-            <label className="block text-sm font-medium text-slate-500 mb-1.5">{label}</label>
+            <label className="block text-sm font-medium text-slate-800 mb-1.5">{label}</label>
             <input
               value={data[key] || ""}
               onChange={(e) => onChange({ ...data, [key]: e.target.value })}
@@ -506,7 +506,7 @@ function ExperienceSection({ items, onChange }: {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Job Title</label>
+                  <label className="block text-xs font-medium text-slate-800 mb-1.5">Job Title</label>
                   <input
                     value={item.title}
                     onChange={(e) => updateItem(item.id, { title: e.target.value })}
@@ -515,7 +515,7 @@ function ExperienceSection({ items, onChange }: {
                   />
                 </div>
                 <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Company</label>
+                  <label className="block text-xs font-medium text-slate-800 mb-1.5">Company</label>
                   <input
                     value={item.company}
                     onChange={(e) => updateItem(item.id, { company: e.target.value })}
@@ -524,7 +524,7 @@ function ExperienceSection({ items, onChange }: {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Location</label>
+                  <label className="block text-xs font-medium text-slate-800 mb-1.5">Location</label>
                   <input
                     value={item.location}
                     onChange={(e) => updateItem(item.id, { location: e.target.value })}
@@ -533,7 +533,7 @@ function ExperienceSection({ items, onChange }: {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Start Date</label>
+                  <label className="block text-xs font-medium text-slate-800 mb-1.5">Start Date</label>
                   <input
                     value={item.startDate}
                     onChange={(e) => updateItem(item.id, { startDate: e.target.value })}
@@ -542,7 +542,7 @@ function ExperienceSection({ items, onChange }: {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">End Date</label>
+                  <label className="block text-xs font-medium text-slate-800 mb-1.5">End Date</label>
                   <input
                     value={item.endDate}
                     onChange={(e) => updateItem(item.id, { endDate: e.target.value })}
@@ -552,7 +552,7 @@ function ExperienceSection({ items, onChange }: {
                   />
                 </div>
                 <div className="flex items-end pb-3">
-                  <label className="flex items-center gap-2 text-sm text-slate-500 cursor-pointer">
+                  <label className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={item.current}
@@ -566,7 +566,7 @@ function ExperienceSection({ items, onChange }: {
 
               {/* Bullet points */}
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-2">
+                <label className="block text-xs font-medium text-slate-800 mb-2">
                   Key Achievements (use numbers & impact)
                 </label>
                 <div className="space-y-2">
@@ -663,7 +663,7 @@ function EducationSection({ items, onChange }: {
           <div key={item.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-slate-500 mb-1.5">School / University</label>
+                <label className="block text-xs font-medium text-slate-800 mb-1.5">School / University</label>
                 <input
                   value={item.school}
                   onChange={(e) => updateItem(item.id, { school: e.target.value })}
@@ -672,7 +672,7 @@ function EducationSection({ items, onChange }: {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1.5">Degree</label>
+                <label className="block text-xs font-medium text-slate-800 mb-1.5">Degree</label>
                 <input
                   value={item.degree}
                   onChange={(e) => updateItem(item.id, { degree: e.target.value })}
@@ -681,7 +681,7 @@ function EducationSection({ items, onChange }: {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1.5">Field of Study</label>
+                <label className="block text-xs font-medium text-slate-800 mb-1.5">Field of Study</label>
                 <input
                   value={item.field}
                   onChange={(e) => updateItem(item.id, { field: e.target.value })}
@@ -690,7 +690,7 @@ function EducationSection({ items, onChange }: {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1.5">Start Year</label>
+                <label className="block text-xs font-medium text-slate-800 mb-1.5">Start Year</label>
                 <input
                   value={item.startDate}
                   onChange={(e) => updateItem(item.id, { startDate: e.target.value })}
@@ -699,7 +699,7 @@ function EducationSection({ items, onChange }: {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1.5">End Year</label>
+                <label className="block text-xs font-medium text-slate-800 mb-1.5">End Year</label>
                 <input
                   value={item.endDate}
                   onChange={(e) => updateItem(item.id, { endDate: e.target.value })}
