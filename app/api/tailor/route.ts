@@ -214,6 +214,10 @@ export async function POST(req: NextRequest) {
         interviewQuestions: result.interviewQuestions || [],
         atsSimulation: result.atsSimulation || null,
         gapClassification: result.gapClassification || null,
+        originalExperience: resumeData.experience,
+        tailoredExperience: result.tailoredResume.experience,
+        originalProjects: resumeData.projects,
+        tailoredProjects: result.tailoredResume.projects,
       },
       tailoredResumeId: tailoredResume.id,
     });

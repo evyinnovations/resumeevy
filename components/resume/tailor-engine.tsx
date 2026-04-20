@@ -7,7 +7,7 @@ import {
   Wand2, Upload, FileText, Target, CheckCircle, XCircle,
   AlertCircle, Loader2, ArrowRight, Download, Eye, Sparkles,
   TrendingUp, RefreshCw, Mail, MessageSquare, Shield, BarChart3,
-  Copy, Check,
+  Copy, Check, GitCompare,
 } from "lucide-react";
 import { getAtsScoreColor, getAtsScoreLabel, cn } from "@/lib/utils";
 import { UpgradeModal } from "@/components/shared/upgrade-modal";
@@ -37,7 +37,7 @@ export function TailorEngine({ resumes, subscription, thisMonthCount }: TailorEn
   const [result, setResult] = useState<TailorResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tailoredResumeId, setTailoredResumeId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "cover-letter" | "interview" | "ats-sim" | "gaps">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "changes" | "cover-letter" | "interview" | "ats-sim" | "gaps">("overview");
   const [copied, setCopied] = useState(false);
 
   const isFreePlan = !subscription || subscription.plan === "FREE";
@@ -90,6 +90,7 @@ export function TailorEngine({ resumes, subscription, thisMonthCount }: TailorEn
       const data = await res.json();
       setResult(data.result);
       setTailoredResumeId(data.tailoredResumeId);
+      setActiveTab("changes");
       setStep("results");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -446,6 +447,7 @@ export function TailorEngine({ resumes, subscription, thisMonthCount }: TailorEn
             <div className="flex gap-1 p-1 bg-slate-100 rounded-2xl overflow-x-auto">
               {[
                 { id: "overview", label: "Overview", icon: BarChart3 },
+                { id: "changes", label: "What Changed", icon: GitCompare },
                 { id: "cover-letter", label: "Cover Letter", icon: Mail },
                 { id: "interview", label: "Interview Prep", icon: MessageSquare },
                 { id: "ats-sim", label: "ATS Simulation", icon: Shield },
@@ -514,6 +516,74 @@ export function TailorEngine({ resumes, subscription, thisMonthCount }: TailorEn
                       ))}
                     </ul>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: What Changed */}
+            {activeTab === "changes" && (
+              <div className="space-y-6">
+                {/* Experience changes */}
+                {result.tailoredExperience && result.tailoredExperience.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-brand-700" />
+                      Experience — Updated Bullets
+                    </div>
+                    {(result.tailoredExperience as ExperienceItem[]).map((exp, i) => {
+                      const orig = (result.originalExperience as ExperienceItem[])?.[i];
+                      const origBullets = orig?.bullets || [];
+                      const newBullets = (exp.bullets || []).filter((b) => !origBullets.includes(b));
+                      const keptBullets = (exp.bullets || []).filter((b) => origBullets.includes(b));
+                      if (newBullets.length === 0) return null;
+                      return (
+                        <div key={i} className="glass-card rounded-2xl p-5">
+                          <div className="font-semibold text-slate-900 mb-1">{exp.title}</div>
+                          <div className="text-xs text-slate-400 mb-3">{exp.company}</div>
+                          {newBullets.map((b, j) => (
+                            <div key={j} className="flex items-start gap-2 mb-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                              <span className="text-emerald-600 font-bold text-xs mt-0.5 flex-shrink-0">+ NEW</span>
+                              <span className="text-xs text-slate-700">{b}</span>
+                            </div>
+                          ))}
+                          {keptBullets.length > 0 && (
+                            <div className="text-xs text-slate-400 mt-2">{keptBullets.length} original bullet{keptBullets.length !== 1 ? "s" : ""} kept unchanged</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Projects changes */}
+                {result.tailoredProjects && result.tailoredProjects.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-violet-600" />
+                      Projects — Updated Bullets
+                    </div>
+                    {(result.tailoredProjects as ProjectItem[]).map((proj, i) => {
+                      const orig = (result.originalProjects as ProjectItem[])?.[i];
+                      const origBullets = orig?.bullets || [];
+                      const newBullets = (proj.bullets || []).filter((b) => !origBullets.includes(b));
+                      if (newBullets.length === 0) return null;
+                      return (
+                        <div key={i} className="glass-card rounded-2xl p-5">
+                          <div className="font-semibold text-slate-900 mb-3">{proj.name}</div>
+                          {newBullets.map((b, j) => (
+                            <div key={j} className="flex items-start gap-2 mb-2 p-2 bg-violet-50 border border-violet-200 rounded-lg">
+                              <span className="text-violet-600 font-bold text-xs mt-0.5 flex-shrink-0">+ NEW</span>
+                              <span className="text-xs text-slate-700">{b}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!result.tailoredExperience?.length && !result.tailoredProjects?.length && (
+                  <div className="text-slate-400 text-sm text-center py-8">No change data available.</div>
                 )}
               </div>
             )}
@@ -744,6 +814,19 @@ export function TailorEngine({ resumes, subscription, thisMonthCount }: TailorEn
   );
 }
 
+interface ExperienceItem {
+  title: string;
+  company: string;
+  bullets: string[];
+  [key: string]: unknown;
+}
+
+interface ProjectItem {
+  name: string;
+  bullets: string[];
+  [key: string]: unknown;
+}
+
 interface TailorResult {
   atsScoreBefore: number;
   atsScoreAfter: number;
@@ -766,4 +849,8 @@ interface TailorResult {
     niceToHave: Array<{ skill: string; reason: string }>;
     framingIssues: Array<{ skill: string; fix: string }>;
   } | null;
+  originalExperience?: unknown[];
+  tailoredExperience?: unknown[];
+  originalProjects?: unknown[];
+  tailoredProjects?: unknown[];
 }
