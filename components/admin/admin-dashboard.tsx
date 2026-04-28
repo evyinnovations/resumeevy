@@ -48,7 +48,7 @@ const PLAN_COLORS: Record<string, string> = {
 };
 
 const PLAN_LABELS: Record<string, string> = {
-  MONTHLY: "Monthly ($19)",
+  MONTHLY: "Monthly ($20)",
   SIX_MONTH: "6-Month ($14/mo)",
   YEARLY: "Yearly ($9/mo)",
   LIFETIME: "Lifetime ($199)",
@@ -204,7 +204,7 @@ export function AdminDashboard({ stats, recentUsers, recentResumes, chartData }:
               ) : (
                 Object.entries(stats.planBreakdown).map(([plan, count]) => {
                   const prices: Record<string, { display: string; monthly: number }> = {
-                    MONTHLY:    { display: "$19/mo",   monthly: 19 },
+                    MONTHLY:    { display: "$20/mo",   monthly: 20 },
                     SIX_MONTH:  { display: "$84/6mo",  monthly: 14 },
                     YEARLY:     { display: "$108/yr",  monthly: 9  },
                     LIFETIME:   { display: "$199 once", monthly: 0  },

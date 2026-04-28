@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 
 const PLAN_PRICES: Record<string, number> = {
-  MONTHLY: 19,
+  MONTHLY: 20,
   SIX_MONTH: 14,
   YEARLY: 9,
   LIFETIME: 199,

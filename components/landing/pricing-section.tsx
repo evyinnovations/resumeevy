@@ -7,16 +7,17 @@ import Link from "next/link";
 const plans = [
   {
     name: "Pro Monthly",
-    displayPrice: "$19",
+    displayPrice: "$20",
     period: "/ month",
     trial: "3-day free trial",
-    badge: "3-Day Free Trial",
-    description: "Full access · cancel anytime",
+    badge: "25% Off · First 3 Months",
+    description: "$15/mo for first 3 months · cancel anytime",
     icon: Calendar,
     highlight: false,
     cta: "Start Free Trial",
     href: "/register?plan=monthly",
     features: [
+      "25% off first 3 months — only $15/mo",
       "3-day free trial — no charge yet",
       "Unlimited AI resume tailoring",
       "Unlimited resume profiles",

@@ -20,9 +20,9 @@ export const stripe = new Proxy({} as Stripe, {
 });
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
-// Monthly  → $19/mo  — 3-day free trial  (recurring)
+// Monthly  → $20/mo  — 3-day free trial, 25% off first 3 months ($15/mo)
 // Yearly   → $95/yr  — 7-day free trial  (recurring, $7.91/mo — save 58%)
-// Lifetime → $149    — no trial          (one-time payment)
+// Lifetime → $199    — no trial          (one-time payment)
 //
 // AI cost per heavy user: ~$0.09/month  →  99%+ gross margin at these prices
 
@@ -48,14 +48,15 @@ export const PLANS = {
 
   MONTHLY: {
     name: "Pro Monthly",
-    price: 1900,           // $19.00/month
-    displayPrice: "$19",
+    price: 2000,           // $20.00/month
+    displayPrice: "$20",
     period: "month",
     trial: 3,              // 3-day free trial
     priceId: process.env.STRIPE_PRICE_MONTHLY,
-    badge: "3-Day Free Trial",
+    badge: "25% Off · First 3 Months",
     description: "Full access · cancel anytime",
     features: [
+      "25% off first 3 months — only $15/mo",
       "3-day free trial — card charged after trial",
       "Unlimited AI resume tailoring",
       "Unlimited resume profiles",
@@ -163,11 +164,15 @@ export async function createCheckoutSession(
         metadata: { userId },
       },
     } : {}),
-    // If a promo code was pre-validated, apply it directly.
-    // Otherwise show the promo code field on Stripe's checkout page.
+    // Discount precedence:
+    //   1. User-supplied promotion code (pre-validated) wins.
+    //   2. Otherwise, auto-apply the monthly 25%-off-first-3-months coupon for MONTHLY.
+    //   3. Otherwise, show the promo code field on Stripe's checkout page.
     ...(promotionCodeId
       ? { discounts: [{ promotion_code: promotionCodeId }] }
-      : { allow_promotion_codes: true }
+      : (planKey === "MONTHLY" && process.env.STRIPE_COUPON_MONTHLY_3MO_25OFF)
+        ? { discounts: [{ coupon: process.env.STRIPE_COUPON_MONTHLY_3MO_25OFF }] }
+        : { allow_promotion_codes: true }
     ),
     success_url: successUrl,
     cancel_url: cancelUrl,
