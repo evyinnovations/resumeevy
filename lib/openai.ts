@@ -14,18 +14,28 @@ const MODEL = () => process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
 
-async function chat(messages: Message[]): Promise<string> {
+interface ChatOptions {
+  temperature?: number;
+  topP?: number;
+  jsonMode?: boolean;
+}
+
+async function chat(messages: Message[], opts: ChatOptions = {}): Promise<string> {
   const genAI = getGenAI();
 
   // Separate system instruction from conversation messages
   const systemMsg = messages.find((m) => m.role === "system");
   const convMessages = messages.filter((m) => m.role !== "system");
 
+  const jsonMode = opts.jsonMode !== false;
+
   const model = genAI.getGenerativeModel({
     model: MODEL(),
     ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
     generationConfig: {
-      responseMimeType: "application/json",
+      ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+      ...(opts.topP !== undefined ? { topP: opts.topP } : {}),
     },
   });
 
@@ -139,27 +149,46 @@ export async function tailorResume(
   // Trim job description to ~3000 chars to stay within token limits
   const jdTrimmed = jobDescription.slice(0, 3000);
 
-  const systemPrompt = `You are an expert resume writer and ATS optimization specialist. Your writing sounds like a real human professional wrote it — never like AI output.
+  const systemPrompt = `You are a resume editor. Your output must read like a real working professional wrote it — not AI. Output that fails AI-detector tools (GPTZero, Originality.ai, Copyleaks, ZeroGPT) is unacceptable.
 
-Rules:
+JOB:
 - Keep personalInfo (name, email, phone, location, linkedin, github, website, title) exactly as-is
 - Keep projects exactly as-is — do not change them
 - Keep education exactly as-is
 - For experience: enhance the last 3 roles by adding NEW bullet points that reflect responsibilities and skills the recruiter is asking for in the JD — frame them as things the candidate plausibly did in that role even if not listed
 - Add 2-4 new bullets per role that match key JD requirements (tools, methodologies, outcomes)
 - Add missing JD keywords into existing AND new bullets naturally
-- Keep bullets concise, impact-driven, with numbers/metrics where possible
+- Keep bullets concise, impact-driven
 - Add any missing skills from the JD to the skills section
 - Return ONLY valid JSON
 
-CRITICAL — Human writing style rules (violating these makes the resume unacceptable):
-- NEVER use these words/phrases: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable solutions, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative
-- Use simple direct verbs instead: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved
-- Vary sentence length — mix short punchy bullets with slightly longer ones
-- Include one specific detail per bullet (a team size, a number, a tool name) — not vague claims
-- Write like a real person describing their job to a friend, then cleaned up for a resume
-- Avoid corporate buzzword stacking — max one "impressive" word per bullet
-- Numbers and % make bullets human — use them wherever plausible`;
+ANTI-AI-DETECTOR RULES (highest priority — violating these makes output unusable):
+
+1. BURSTY rhythm. Alternate very short bullets (5-9 words) with longer ones (16-24 words). Never put 3 similar-length bullets in a row. AI detectors flag uniform length.
+
+2. NON-PARALLEL openings. Do NOT start every bullet with a past-tense verb. Across a single role, mix:
+   - Plain verb: "Built the retry logic for..."
+   - Context first: "After a bad incident, rewrote the..."
+   - Number first: "40% fewer pages for oncall after..."
+   - Tool/situation first: "On the new pipeline, owned..."
+   - Fragment: "Cut DB writes 3x. Found a race condition in..."
+   At least 3 different opening styles per role.
+
+3. IMPERFECT numbers. Use "around 40%", "roughly 8 hrs/week", "~150ms", "about 12 engineers" sometimes — not always clean round numbers. Real people estimate.
+
+4. DOMAIN slang. Use natural professional speech where it fits: "wired up", "shipped behind a flag", "moved off", "stood up", "ripped out", "ran point on", "got rid of", "flaky tests", "noisy alerts", "took over", "owned end-to-end".
+
+5. ONE stylistic quirk per role minimum: an em-dash mid-sentence, a colon-led clause, a parenthetical aside, or a fragment.
+
+6. BANNED words/phrases (never appear): spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative, comprehensive, ensured, facilitated, implemented, in order to, as well as, key stakeholders, deliverables, synergies, best practices, state-of-the-art.
+
+7. PREFERRED verbs: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved, owned, drove, hired, killed, replaced, rewrote, debugged, profiled, tuned, scoped, pitched, mentored, paired.
+
+8. NO templated phrasing. Avoid the pattern "[verb] [thing] [resulting in/leading to/which] [metric]" repeating 3+ times in a section. Vary the connector and structure.
+
+9. ONE concrete detail per bullet — a number, a tool name, a team size, a deadline, a system. Vague claims look AI-written.
+
+10. Write like the person told a friend over coffee, then cleaned it up. Voice over polish.`;
 
   const userPrompt = `Job Title: ${jobTitle}
 Job Description: ${jdTrimmed}
@@ -185,16 +214,123 @@ Return a single JSON object with this exact structure:
   "interviewQuestions": [{ "question": "...", "category": "Technical", "tip": "..." }]
 }`;
 
-  const raw = await chat([
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ]);
+  const raw = await chat(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    { temperature: 0.95, topP: 0.95 }
+  );
 
+  let parsed: TailorResult;
   try {
-    return JSON.parse(extractJSON(raw)) as TailorResult;
+    parsed = JSON.parse(extractJSON(raw)) as TailorResult;
   } catch {
     throw new Error("AI returned invalid JSON. Please try again.");
   }
+
+  // Second pass: humanize the tailored content to defeat AI detectors.
+  try {
+    parsed.tailoredResume = await humanizeResumeContent(parsed.tailoredResume);
+  } catch (e) {
+    // Non-fatal — return un-humanized result if the pass fails.
+    console.warn("Humanize pass failed:", e);
+  }
+
+  return parsed;
+}
+
+// ─── Humanizer (anti-AI-detector pass) ────────────────────────────────────────
+// Rewrites summary + experience bullets + project bullets so output looks
+// human-written to AI detectors (GPTZero, Originality.ai, Copyleaks, ZeroGPT).
+
+const HUMANIZE_SYSTEM = `You rewrite resume text so it reads as human-written and defeats AI text detectors (GPTZero, Originality.ai, Copyleaks, ZeroGPT).
+
+KEEP all factual content — companies, tools, numbers, dates, accomplishments. ONLY change *how* it is phrased.
+
+PRINCIPLES:
+- BURSTINESS: vary sentence length aggressively. Short fragments (4-8 words) next to longer ones (18-26 words). Avoid uniform length runs.
+- PERPLEXITY: pick less-predictable phrasing. Avoid the phrase a typical LLM would emit. Lean on professional slang: "wired up", "stood up", "moved off", "ripped out", "ran point on", "got rid of", "took over", "shipped behind a flag", "owned end-to-end".
+- NON-PARALLEL openings: don't start every bullet with the same word class. Mix verb-first, context-first ("After the migration..."), number-first ("Roughly 40%..."), fragment.
+- IMPERFECT numbers: change clean round numbers to estimates sometimes — "50%" → "about half", "100ms" → "~100ms". Real people estimate.
+- ONE quirk per bullet minimum: em-dash mid-sentence, colon-led clause, a parenthetical aside, or a fragment.
+- BANNED words (never output): spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative, comprehensive, ensured, facilitated, implemented, in order to, as well as, key stakeholders, deliverables, synergies, best practices, state-of-the-art.
+- PREFERRED verbs: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved, owned, drove, killed, replaced, rewrote, debugged, profiled, tuned, scoped, pitched, mentored, paired.
+- Avoid the templated pattern "[verb] X [resulting in/leading to/which] Y" three or more times in a row.
+- Keep ATS keywords intact.
+
+Output ONLY valid JSON, same shape as the input — a JSON object mapping each input id to the rewritten text.`;
+
+interface HumanizeItem {
+  id: string;
+  text: string;
+}
+
+export async function humanizeResumeContent(resume: ResumeData): Promise<ResumeData> {
+  const items: HumanizeItem[] = [];
+
+  if (resume.summary && resume.summary.trim()) {
+    items.push({ id: "summary", text: resume.summary });
+  }
+
+  resume.experience.forEach((exp, i) => {
+    exp.bullets.forEach((b, j) => {
+      if (b && b.trim()) items.push({ id: `exp-${i}-${j}`, text: b });
+    });
+  });
+
+  resume.projects.forEach((proj, i) => {
+    if (proj.description && proj.description.trim()) {
+      items.push({ id: `pdesc-${i}`, text: proj.description });
+    }
+    proj.bullets.forEach((b, j) => {
+      if (b && b.trim()) items.push({ id: `proj-${i}-${j}`, text: b });
+    });
+  });
+
+  if (items.length === 0) return resume;
+
+  const userPrompt = `Rewrite each item below to read as natural human-written resume text and defeat AI text detectors. Preserve every fact, number, tool, and keyword — only change phrasing/rhythm.
+
+Input items (JSON):
+${JSON.stringify(items)}
+
+Return ONLY a JSON object mapping each id to its rewritten text. Example:
+{"summary": "rewritten summary...", "exp-0-0": "rewritten bullet...", ...}
+
+Every input id MUST appear in the output. Do not add new ids.`;
+
+  const raw = await chat(
+    [
+      { role: "system", content: HUMANIZE_SYSTEM },
+      { role: "user", content: userPrompt },
+    ],
+    { temperature: 1.0, topP: 0.98 }
+  );
+
+  let map: Record<string, string>;
+  try {
+    map = JSON.parse(extractJSON(raw)) as Record<string, string>;
+  } catch {
+    return resume; // bail silently — keep original text
+  }
+
+  const get = (id: string, fallback: string) =>
+    typeof map[id] === "string" && map[id].trim() ? map[id] : fallback;
+
+  return {
+    ...resume,
+    summary: resume.summary ? get("summary", resume.summary) : resume.summary,
+    experience: resume.experience.map((exp, i) => ({
+      ...exp,
+      bullets: exp.bullets.map((b, j) => get(`exp-${i}-${j}`, b)),
+    })),
+    projects: resume.projects.map((proj, i) => ({
+      ...proj,
+      description: proj.description ? get(`pdesc-${i}`, proj.description) : proj.description,
+      bullets: proj.bullets.map((b, j) => get(`proj-${i}-${j}`, b)),
+    })),
+  };
 }
 
 // ─── ATS Score ────────────────────────────────────────────────────────────────
@@ -243,20 +379,26 @@ export async function getSectionSuggestion(
   content: string,
   context?: string
 ): Promise<string[]> {
-  const prompt = `You are a professional resume writer. Rewrite this ${section} section to sound like a real human professional wrote it — not AI.
+  const prompt = `Rewrite this ${section} section to read as human-written and defeat AI text detectors (GPTZero, Originality.ai, Copyleaks, ZeroGPT).
 ${context ? `Target role: ${context}` : ""}
 Current content: ${content}
 
 Rules:
-- Natural, varied sentence structure — not templated
-- No buzzwords: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, robust, innovative, dynamic, passionate, results-driven, thought leader, holistic, seamlessly, proactively, transformative
-- Simple direct verbs, specific details, honest tone
-- Reads like the person wrote it themselves, cleaned up
+- BURSTY rhythm — alternate short fragments with longer sentences
+- NON-PARALLEL openings — don't always start with a verb
+- IMPERFECT numbers — "around 40%", "~150ms"
+- Domain slang OK: "wired up", "stood up", "ripped out", "moved off", "shipped behind a flag"
+- One stylistic quirk per version: em-dash, colon clause, fragment, or parenthetical
+- BANNED: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, robust, innovative, dynamic, passionate, results-driven, thought leader, holistic, seamlessly, proactively, transformative, comprehensive, ensured, facilitated, implemented, in order to, as well as, key stakeholders, deliverables, best practices
+- PREFERRED verbs: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, owned, drove, replaced, rewrote, tuned
 
-Return ONLY a JSON array of 3 improved versions:
+Return ONLY a JSON array of 3 distinctly different rewrites:
 ["version1", "version2", "version3"]`;
 
-  const raw = await chat([{ role: "user", content: prompt }]);
+  const raw = await chat(
+    [{ role: "user", content: prompt }],
+    { temperature: 1.0, topP: 0.95 }
+  );
   try {
     const parsed = JSON.parse(extractJSON(raw));
     return Array.isArray(parsed) ? parsed : parsed.suggestions || [];
@@ -321,15 +463,37 @@ export async function generateResumeFromScratch(input: GenerateResumeInput): Pro
   const { personalInfo, targetRole, experienceLevel } = input;
   const cfg = LEVEL_CONFIG[experienceLevel];
 
-  const systemPrompt = `You are a professional resume writer. You write resumes that sound like a real human professional wrote them — not AI. Every resume you write:
-- Uses simple, direct action verbs with real numbers (%, $, team size, time saved)
-- Has natural, varied sentence length — not every bullet follows the same template
-- Sounds like the person described their own job, then cleaned it up for a resume
-- Passes ATS with proper keywords woven in naturally
-- Has realistic company names, tech stacks, and career progression
-- NEVER uses: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable solutions, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative
-- Instead uses: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved, owned, shipped
-- Includes one specific concrete detail per bullet — a number, a tool, a team size, a deadline
+  const systemPrompt = `You write resumes that read as human-written and defeat AI text detectors (GPTZero, Originality.ai, Copyleaks, ZeroGPT). Output flagged as AI is unacceptable.
+
+ANTI-AI-DETECTOR RULES (highest priority):
+
+1. BURSTY rhythm. Alternate very short bullets (5-9 words) with longer ones (16-24 words). Never put 3 similar-length bullets in a row.
+
+2. NON-PARALLEL openings. Across a single role, mix at least 3 styles:
+   - Plain verb: "Built the retry logic for..."
+   - Context first: "After a bad incident, rewrote..."
+   - Number first: "40% fewer pages for oncall after..."
+   - Tool/situation first: "On the new pipeline, owned..."
+   - Fragment: "Cut DB writes 3x. Found a race condition in..."
+
+3. IMPERFECT numbers. Mix clean numbers with estimates: "around 40%", "~150ms", "roughly 8 engineers", "about half".
+
+4. DOMAIN slang. Use natural professional speech where it fits: "wired up", "shipped behind a flag", "moved off", "stood up", "ripped out", "ran point on", "got rid of", "flaky tests", "noisy alerts", "took over", "owned end-to-end".
+
+5. ONE stylistic quirk per role minimum: em-dash mid-sentence, colon-led clause, parenthetical aside, or a fragment.
+
+6. BANNED words/phrases (never appear): spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative, comprehensive, ensured, facilitated, implemented, in order to, as well as, key stakeholders, deliverables, synergies, best practices, state-of-the-art.
+
+7. PREFERRED verbs: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved, owned, drove, killed, replaced, rewrote, debugged, profiled, tuned, scoped, pitched, mentored, paired.
+
+8. NO templated phrasing. Don't repeat "[verb] X [resulting in] Y" three times in a row. Vary the connector and structure.
+
+9. ONE concrete detail per bullet — a number, a tool, a team size, a deadline.
+
+10. Voice over polish. Write like the person told a friend over coffee, then cleaned it up.
+
+Realistic company names, tech stacks, and career progression. Keywords woven in naturally for ATS.
+
 Return ONLY valid JSON.`;
 
   const userPrompt = `Create a complete, realistic ATS-optimized resume for:
@@ -371,14 +535,27 @@ Return this exact JSON structure:
   "certifications": [{ "id": "cert-1", "name": "[cert name]", "issuer": "[issuer]", "date": "YYYY", "url": "" }]
 }`;
 
-  const raw = await chat([
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ]);
+  const raw = await chat(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    { temperature: 0.95, topP: 0.95 }
+  );
 
+  let resume: ResumeData;
   try {
-    return JSON.parse(extractJSON(raw)) as ResumeData;
+    resume = JSON.parse(extractJSON(raw)) as ResumeData;
   } catch {
     throw new Error("AI returned invalid JSON. Please try again.");
   }
+
+  // Second pass: humanize to defeat AI detectors.
+  try {
+    resume = await humanizeResumeContent(resume);
+  } catch (e) {
+    console.warn("Humanize pass failed:", e);
+  }
+
+  return resume;
 }
