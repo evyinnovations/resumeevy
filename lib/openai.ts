@@ -230,11 +230,13 @@ Return a single JSON object with this exact structure:
   }
 
   // Second pass: humanize the tailored content to defeat AI detectors.
-  try {
-    parsed.tailoredResume = await humanizeResumeContent(parsed.tailoredResume);
-  } catch (e) {
-    // Non-fatal — return un-humanized result if the pass fails.
-    console.warn("Humanize pass failed:", e);
+  // Gated by env flag — adds a second LLM call which can blow Vercel timeout.
+  if (process.env.HUMANIZE_PASS_ENABLED === "true") {
+    try {
+      parsed.tailoredResume = await humanizeResumeContent(parsed.tailoredResume);
+    } catch (e) {
+      console.warn("Humanize pass failed:", e);
+    }
   }
 
   return parsed;
@@ -551,10 +553,13 @@ Return this exact JSON structure:
   }
 
   // Second pass: humanize to defeat AI detectors.
-  try {
-    resume = await humanizeResumeContent(resume);
-  } catch (e) {
-    console.warn("Humanize pass failed:", e);
+  // Gated by env flag — adds a second LLM call which can blow Vercel timeout.
+  if (process.env.HUMANIZE_PASS_ENABLED === "true") {
+    try {
+      resume = await humanizeResumeContent(resume);
+    } catch (e) {
+      console.warn("Humanize pass failed:", e);
+    }
   }
 
   return resume;

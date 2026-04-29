@@ -83,8 +83,19 @@ export function TailorEngine({ resumes, subscription, thisMonthCount }: TailorEn
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Tailoring failed");
+        const text = await res.text();
+        let errMsg = "Tailoring failed";
+        try {
+          const data = JSON.parse(text);
+          errMsg = data.error || errMsg;
+        } catch {
+          if (res.status === 504 || res.status === 408) {
+            errMsg = "Request timed out. Try a shorter job description or try again.";
+          } else if (res.status >= 500) {
+            errMsg = "Server error. Please try again in a moment.";
+          }
+        }
+        throw new Error(errMsg);
       }
 
       const data = await res.json();

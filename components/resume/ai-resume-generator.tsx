@@ -54,9 +54,18 @@ export function AIResumeGenerator() {
           experienceLevel: form.experienceLevel,
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: { error?: string; resumeId?: string } = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        if (res.status === 504 || res.status === 408) {
+          throw new Error("Generation timed out. Please try again.");
+        }
+        throw new Error("Server error. Please try again in a moment.");
+      }
       if (!res.ok) throw new Error(data.error || "Generation failed");
-      setDoneId(data.resumeId);
+      setDoneId(data.resumeId!);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate resume");
       setStep(1);
