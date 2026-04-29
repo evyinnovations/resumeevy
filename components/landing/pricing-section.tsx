@@ -17,7 +17,7 @@ const plans = [
     cta: "Start Free Trial",
     href: "/register?plan=monthly",
     features: [
-      "25% off first 3 months — only $15/mo",
+      "Use code START25 — 25% off first 3 months ($15/mo)",
       "3-day free trial — no charge yet",
       "Unlimited AI resume tailoring",
       "Unlimited resume profiles",

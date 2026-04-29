@@ -22,7 +22,7 @@ export const PLAN_DISPLAY = {
     badge: "25% Off · First 3 Months",
     description: "Full access · cancel anytime",
     features: [
-      "25% off first 3 months — only $15/mo",
+      "Use code START25 — 25% off first 3 months ($15/mo)",
       "3-day free trial — card charged after trial",
       "Unlimited AI resume tailoring",
       "Unlimited resume profiles",

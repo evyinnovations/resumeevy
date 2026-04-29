@@ -56,7 +56,7 @@ export const PLANS = {
     badge: "25% Off · First 3 Months",
     description: "Full access · cancel anytime",
     features: [
-      "25% off first 3 months — only $15/mo",
+      "Use code START25 — 25% off first 3 months ($15/mo)",
       "3-day free trial — card charged after trial",
       "Unlimited AI resume tailoring",
       "Unlimited resume profiles",
@@ -164,15 +164,11 @@ export async function createCheckoutSession(
         metadata: { userId },
       },
     } : {}),
-    // Discount precedence:
-    //   1. User-supplied promotion code (pre-validated) wins.
-    //   2. Otherwise, auto-apply the monthly 25%-off-first-3-months coupon for MONTHLY.
-    //   3. Otherwise, show the promo code field on Stripe's checkout page.
+    // Discount: user-supplied promo (pre-validated) wins; otherwise show
+    // the promo-code field on Stripe checkout so users can enter START25.
     ...(promotionCodeId
       ? { discounts: [{ promotion_code: promotionCodeId }] }
-      : (planKey === "MONTHLY" && process.env.STRIPE_COUPON_MONTHLY_3MO_25OFF)
-        ? { discounts: [{ coupon: process.env.STRIPE_COUPON_MONTHLY_3MO_25OFF }] }
-        : { allow_promotion_codes: true }
+      : { allow_promotion_codes: true }
     ),
     success_url: successUrl,
     cancel_url: cancelUrl,
