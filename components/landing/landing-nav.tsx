@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, Zap } from "lucide-react";
-import { useSession } from "next-auth/react";
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -16,8 +15,6 @@ const navLinks = [
 export function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { status } = useSession();
-  const isAuthed = status === "authenticated";
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 20);
@@ -63,31 +60,19 @@ export function LandingNav() {
 
           {/* CTA */}
           <div className="hidden md:flex items-center gap-4">
-            {isAuthed ? (
-              <Link
-                href="/dashboard"
-                className="px-5 py-2.5 text-sm font-semibold bg-[#1A28C1] hover:bg-[#1520A0] text-white rounded-lg transition-all duration-200 cursor-pointer shadow-sm shadow-[#1A28C1]/20"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-              >
-                Dashboard
-              </Link>
-            ) : (
-              <>
-                <Link
-                  href="/login"
-                  className="text-sm font-medium text-slate-500 hover:text-[#1A28C1] transition-colors cursor-pointer"
-                >
-                  Sign in
-                </Link>
-                <Link
-                  href="/register"
-                  className="px-5 py-2.5 text-sm font-semibold bg-[#1A28C1] hover:bg-[#1520A0] text-white rounded-lg transition-all duration-200 cursor-pointer shadow-sm shadow-[#1A28C1]/20"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-                >
-                  Get Started Free
-                </Link>
-              </>
-            )}
+            <Link
+              href="/login"
+              className="text-sm font-medium text-slate-500 hover:text-[#1A28C1] transition-colors cursor-pointer"
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/register"
+              className="px-5 py-2.5 text-sm font-semibold bg-[#1A28C1] hover:bg-[#1520A0] text-white rounded-lg transition-all duration-200 cursor-pointer shadow-sm shadow-[#1A28C1]/20"
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+            >
+              Get Started Free
+            </Link>
           </div>
 
           {/* Mobile toggle */}
@@ -122,29 +107,18 @@ export function LandingNav() {
                 </a>
               ))}
               <div className="mt-3 pt-3 border-t border-[#D8D8F0] flex flex-col gap-2">
-                {isAuthed ? (
-                  <Link
-                    href="/dashboard"
-                    className="px-4 py-3 text-sm font-semibold text-center bg-[#1A28C1] text-white rounded-lg cursor-pointer"
-                  >
-                    Dashboard
-                  </Link>
-                ) : (
-                  <>
-                    <Link
-                      href="/login"
-                      className="px-4 py-3 text-sm font-medium text-center text-slate-500 hover:text-[#1A28C1] rounded-lg transition-all cursor-pointer"
-                    >
-                      Sign in
-                    </Link>
-                    <Link
-                      href="/register"
-                      className="px-4 py-3 text-sm font-semibold text-center bg-[#1A28C1] text-white rounded-lg cursor-pointer"
-                    >
-                      Get Started Free
-                    </Link>
-                  </>
-                )}
+                <Link
+                  href="/login"
+                  className="px-4 py-3 text-sm font-medium text-center text-slate-500 hover:text-[#1A28C1] rounded-lg transition-all cursor-pointer"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/register"
+                  className="px-4 py-3 text-sm font-semibold text-center bg-[#1A28C1] text-white rounded-lg cursor-pointer"
+                >
+                  Get Started Free
+                </Link>
               </div>
             </div>
           </motion.div>
