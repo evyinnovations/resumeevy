@@ -33,7 +33,22 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
 
   if (!resume) notFound();
 
-  const toArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const safeParse = <T,>(v: unknown, fallback: T): T => {
+    if (typeof v === "string") {
+      try { return JSON.parse(v) as T; } catch { return fallback; }
+    }
+    return (v as T) ?? fallback;
+  };
+  const toArray = (v: unknown): unknown[] => {
+    const parsed = safeParse<unknown>(v, []);
+    return Array.isArray(parsed) ? parsed : [];
+  };
+  const toObject = (v: unknown): Record<string, string> => {
+    const parsed = safeParse<unknown>(v, {});
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
+  };
 
   return (
     <ResumeBuilder
@@ -41,9 +56,7 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
         id: resume.id,
         title: resume.title,
         templateId: resume.templateId,
-        personalInfo: (resume.personalInfo && typeof resume.personalInfo === "object" && !Array.isArray(resume.personalInfo)
-          ? resume.personalInfo
-          : {}) as Record<string, string>,
+        personalInfo: toObject(resume.personalInfo),
         summary: resume.summary || "",
         experience: toArray(resume.experience),
         education: toArray(resume.education),
