@@ -155,8 +155,11 @@ JOB:
 - Keep personalInfo (name, email, phone, location, linkedin, github, website, title) exactly as-is
 - Keep projects exactly as-is — do not change them
 - Keep education exactly as-is
-- For experience: enhance the last 3 roles by adding NEW bullet points that reflect responsibilities and skills the recruiter is asking for in the JD — frame them as things the candidate plausibly did in that role even if not listed
-- Add 2-4 new bullets per role that match key JD requirements (tools, methodologies, outcomes)
+- Keep certifications exactly as-is
+- ALWAYS include a "summary" field — if input has one, refine it for the JD; if missing, write a 2-3 sentence professional summary aligned to the JD
+- For experience: PRESERVE every existing bullet for every role (never drop a bullet) and append 2-4 NEW bullets per role that match key JD requirements (tools, methodologies, outcomes). Frame new bullets as things the candidate plausibly did in that role even if not listed
+- If a role in input has empty bullets, generate 5-7 fresh bullets for it based on the role title/company/dates and the JD
+- Every experience role MUST end with a non-empty "bullets" array of strings — never return an empty bullets array
 - Add missing JD keywords into existing AND new bullets naturally
 - Keep bullets concise, impact-driven
 - Add any missing skills from the JD to the skills section
@@ -229,6 +232,9 @@ Return a single JSON object with this exact structure:
     throw new Error("AI returned invalid JSON. Please try again.");
   }
 
+  // Restore content the model may have dropped or returned empty.
+  parsed.tailoredResume = restoreMissingFields(parsed.tailoredResume, resume);
+
   // Second pass: humanize the tailored content to defeat AI detectors.
   // Gated by env flag — adds a second LLM call which can blow Vercel timeout.
   if (process.env.HUMANIZE_PASS_ENABLED === "true") {
@@ -240,6 +246,38 @@ Return a single JSON object with this exact structure:
   }
 
   return parsed;
+}
+
+// Guard against the model dropping bullets, summary, projects, or certs.
+// Falls back to original values when tailored output is missing or empty.
+function restoreMissingFields(tailored: ResumeData, original: ResumeData): ResumeData {
+  const out: ResumeData = {
+    ...tailored,
+    personalInfo: { ...original.personalInfo, ...tailored.personalInfo },
+    summary: tailored.summary?.trim() ? tailored.summary : original.summary,
+    projects: tailored.projects?.length ? tailored.projects : original.projects,
+    certifications: tailored.certifications?.length ? tailored.certifications : original.certifications,
+    education: tailored.education?.length ? tailored.education : original.education,
+    skills: tailored.skills?.length ? tailored.skills : original.skills,
+    experience: (tailored.experience || []).map((role, i) => {
+      const orig = original.experience[i];
+      const bullets = Array.isArray(role.bullets) ? role.bullets.filter(b => typeof b === "string" && b.trim()) : [];
+      if (bullets.length === 0 && orig?.bullets?.length) {
+        return { ...role, bullets: orig.bullets };
+      }
+      // If LLM provided bullets, merge with originals (originals first, dedupe)
+      if (orig?.bullets?.length) {
+        const seen = new Set(orig.bullets.map(b => b.trim().toLowerCase()));
+        const newOnes = bullets.filter(b => !seen.has(b.trim().toLowerCase()));
+        return { ...role, bullets: [...orig.bullets, ...newOnes] };
+      }
+      return { ...role, bullets };
+    }),
+  };
+  if (!out.experience.length && original.experience.length) {
+    out.experience = original.experience;
+  }
+  return out;
 }
 
 // ─── Humanizer (anti-AI-detector pass) ────────────────────────────────────────
@@ -414,6 +452,13 @@ Return ONLY a JSON array of 3 distinctly different rewrites:
 export async function parseResumeText(text: string): Promise<ResumeData> {
   const prompt = `Parse this resume text into structured JSON data.
 
+Extraction rules:
+- Capture EVERY bullet point under each experience role. A bullet is any line that starts with •, -, ▪, *, →, or appears as a discrete sentence describing a responsibility/achievement under a role. Do not summarize, merge, or drop bullets — preserve them verbatim.
+- Each experience role's "bullets" array MUST contain every bullet found under that role in the source text.
+- Capture project bullets the same way.
+- Preserve original wording for bullets, summary, skills.
+- If a section is genuinely missing from the source, return an empty array for it (do not invent content).
+
 Resume text:
 ${text}
 
@@ -421,7 +466,7 @@ Return ONLY valid JSON:
 {
   "personalInfo": { "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "", "website": "", "title": "" },
   "summary": "",
-  "experience": [{ "id": "exp-1", "company": "", "title": "", "location": "", "startDate": "MM/YYYY", "endDate": "MM/YYYY", "current": false, "bullets": [] }],
+  "experience": [{ "id": "exp-1", "company": "", "title": "", "location": "", "startDate": "MM/YYYY", "endDate": "MM/YYYY", "current": false, "bullets": ["bullet text 1", "bullet text 2"] }],
   "education": [{ "id": "edu-1", "school": "", "degree": "", "field": "", "startDate": "YYYY", "endDate": "YYYY", "gpa": "" }],
   "skills": [{ "id": "skill-1", "category": "Programming Languages", "items": [] }],
   "projects": [{ "id": "proj-1", "name": "", "description": "", "bullets": [], "tech": [], "url": "" }],
