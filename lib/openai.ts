@@ -152,17 +152,16 @@ export async function tailorResume(
   const systemPrompt = `You are a resume editor. Your output must read like a real working professional wrote it — not AI. Output that fails AI-detector tools (GPTZero, Originality.ai, Copyleaks, ZeroGPT) is unacceptable.
 
 JOB:
-- Keep personalInfo (name, email, phone, location, linkedin, github, website, title) exactly as-is
-- Keep projects exactly as-is — do not change them
-- Keep education exactly as-is
-- Keep certifications exactly as-is
+- Output tailoredResume MUST include EVERY experience role from the input — same count, same order, same id, company, title, location, dates. Never omit a role.
+- Output tailoredResume MUST include EVERY project from the input — same id, name, tech, url. Never omit a project.
+- Keep personalInfo, education, and certifications exactly as-is
 - ALWAYS include a "summary" field — if input has one, refine it for the JD; if missing, write a 2-3 sentence professional summary aligned to the JD
 - For experience: PRESERVE every existing bullet for every role (never drop a bullet) and append 2-4 NEW bullets per role that match key JD requirements (tools, methodologies, outcomes). Frame new bullets as things the candidate plausibly did in that role even if not listed
 - If a role in input has empty bullets, generate 5-7 fresh bullets for it based on the role title/company/dates and the JD
 - Every experience role MUST end with a non-empty "bullets" array of strings — never return an empty bullets array
 - Add missing JD keywords into existing AND new bullets naturally
 - Keep bullets concise, impact-driven
-- Add any missing skills from the JD to the skills section
+- Add any missing skills from the JD to the skills section (preserve all existing skill groups)
 - Return ONLY valid JSON
 
 ANTI-AI-DETECTOR RULES (highest priority — violating these makes output unusable):
@@ -248,36 +247,77 @@ Return a single JSON object with this exact structure:
   return parsed;
 }
 
-// Guard against the model dropping bullets, summary, projects, or certs.
-// Falls back to original values when tailored output is missing or empty.
+// Use original resume as the structural source of truth. Only let the model
+// contribute additions: refined summary, extra bullets per role, extra skills.
+// Never let it drop roles, projects, certifications, or education.
 function restoreMissingFields(tailored: ResumeData, original: ResumeData): ResumeData {
-  const out: ResumeData = {
-    ...tailored,
+  const cleanBullets = (arr: unknown): string[] =>
+    Array.isArray(arr) ? arr.filter((b): b is string => typeof b === "string" && b.trim().length > 0) : [];
+
+  const findTailoredRole = (orig: ResumeData["experience"][number]) => {
+    const list = tailored.experience || [];
+    const byId = list.find((r) => r.id && r.id === orig.id);
+    if (byId) return byId;
+    const norm = (s?: string) => (s || "").trim().toLowerCase();
+    return list.find(
+      (r) => norm(r.company) === norm(orig.company) && norm(r.title) === norm(orig.title),
+    );
+  };
+
+  const findTailoredProject = (orig: ResumeData["projects"][number]) => {
+    const list = tailored.projects || [];
+    const byId = list.find((p) => p.id && p.id === orig.id);
+    if (byId) return byId;
+    return list.find((p) => (p.name || "").trim().toLowerCase() === (orig.name || "").trim().toLowerCase());
+  };
+
+  const mergedExperience: ResumeData["experience"] = original.experience.map((orig) => {
+    const t = findTailoredRole(orig);
+    const origBullets = cleanBullets(orig.bullets);
+    const tailoredBullets = cleanBullets(t?.bullets);
+    const seen = new Set(origBullets.map((b) => b.trim().toLowerCase()));
+    const newBullets = tailoredBullets.filter((b) => !seen.has(b.trim().toLowerCase()));
+    return { ...orig, bullets: [...origBullets, ...newBullets] };
+  });
+
+  const mergedProjects: ResumeData["projects"] = original.projects.map((orig) => {
+    const t = findTailoredProject(orig);
+    const origBullets = cleanBullets(orig.bullets);
+    const tailoredBullets = cleanBullets(t?.bullets);
+    const seen = new Set(origBullets.map((b) => b.trim().toLowerCase()));
+    const newBullets = tailoredBullets.filter((b) => !seen.has(b.trim().toLowerCase()));
+    return { ...orig, bullets: [...origBullets, ...newBullets] };
+  });
+
+  // Skills: union original + new categories/items the model added.
+  const mergedSkills: ResumeData["skills"] = (() => {
+    const map = new Map<string, Set<string>>();
+    for (const group of original.skills || []) {
+      const key = (group.category || "Skills").trim();
+      if (!map.has(key)) map.set(key, new Set());
+      for (const item of group.items || []) if (item?.trim()) map.get(key)!.add(item.trim());
+    }
+    for (const group of tailored.skills || []) {
+      const key = (group.category || "Skills").trim();
+      if (!map.has(key)) map.set(key, new Set());
+      for (const item of group.items || []) if (item?.trim()) map.get(key)!.add(item.trim());
+    }
+    return Array.from(map.entries()).map(([category, items], i) => ({
+      id: `skill-${i + 1}`,
+      category,
+      items: Array.from(items),
+    }));
+  })();
+
+  return {
     personalInfo: { ...original.personalInfo, ...tailored.personalInfo },
     summary: tailored.summary?.trim() ? tailored.summary : original.summary,
-    projects: tailored.projects?.length ? tailored.projects : original.projects,
-    certifications: tailored.certifications?.length ? tailored.certifications : original.certifications,
-    education: tailored.education?.length ? tailored.education : original.education,
-    skills: tailored.skills?.length ? tailored.skills : original.skills,
-    experience: (tailored.experience || []).map((role, i) => {
-      const orig = original.experience[i];
-      const bullets = Array.isArray(role.bullets) ? role.bullets.filter(b => typeof b === "string" && b.trim()) : [];
-      if (bullets.length === 0 && orig?.bullets?.length) {
-        return { ...role, bullets: orig.bullets };
-      }
-      // If LLM provided bullets, merge with originals (originals first, dedupe)
-      if (orig?.bullets?.length) {
-        const seen = new Set(orig.bullets.map(b => b.trim().toLowerCase()));
-        const newOnes = bullets.filter(b => !seen.has(b.trim().toLowerCase()));
-        return { ...role, bullets: [...orig.bullets, ...newOnes] };
-      }
-      return { ...role, bullets };
-    }),
+    experience: mergedExperience,
+    education: original.education,
+    skills: mergedSkills.length ? mergedSkills : original.skills,
+    projects: mergedProjects,
+    certifications: original.certifications,
   };
-  if (!out.experience.length && original.experience.length) {
-    out.experience = original.experience;
-  }
-  return out;
 }
 
 // ─── Humanizer (anti-AI-detector pass) ────────────────────────────────────────
