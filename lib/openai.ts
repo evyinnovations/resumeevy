@@ -18,6 +18,7 @@ interface ChatOptions {
   temperature?: number;
   topP?: number;
   jsonMode?: boolean;
+  thinkingBudget?: number;
 }
 
 async function chat(messages: Message[], opts: ChatOptions = {}): Promise<string> {
@@ -28,6 +29,8 @@ async function chat(messages: Message[], opts: ChatOptions = {}): Promise<string
   const convMessages = messages.filter((m) => m.role !== "system");
 
   const jsonMode = opts.jsonMode !== false;
+  // Default: disable thinking for 2.5 models to cut latency. Override via opts.
+  const thinkingBudget = opts.thinkingBudget !== undefined ? opts.thinkingBudget : 0;
 
   const model = genAI.getGenerativeModel({
     model: MODEL(),
@@ -36,7 +39,8 @@ async function chat(messages: Message[], opts: ChatOptions = {}): Promise<string
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       ...(opts.topP !== undefined ? { topP: opts.topP } : {}),
-    },
+      thinkingConfig: { thinkingBudget },
+    } as Record<string, unknown>,
   });
 
   const contents = convMessages.map((m) => ({
@@ -192,7 +196,7 @@ ANTI-AI-DETECTOR RULES (highest priority — violating these makes output unusab
 
 10. Write like the person told a friend over coffee, then cleaned it up. Voice over polish.`;
 
-  const userPrompt = `Job Title: ${jobTitle}
+  const corePrompt = `Job Title: ${jobTitle}
 Job Description: ${jdTrimmed}
 Resume: ${JSON.stringify(resume)}
 
@@ -205,30 +209,34 @@ Return a single JSON object with this exact structure:
   "atsScoreBefore": 65,
   "atsScoreAfter": 87,
   "keywordMatchPct": 78.5,
-  "changes": [{ "section": "experience", "change": "Added Docker to Senior Engineer role" }],
-  "atsSimulation": { "workday": 84, "greenhouse": 89, "lever": 91, "taleo": 79, "notes": ["note1"] },
-  "gapClassification": {
-    "dealBreakers": [{ "skill": "Kubernetes", "reason": "Required, not in resume" }],
-    "niceToHave": [{ "skill": "Terraform", "reason": "Preferred" }],
-    "framingIssues": [{ "skill": "CI/CD", "fix": "Rephrase Jenkins as CI/CD pipeline" }]
-  },
-  "coverLetter": "Dear Hiring Manager,\\n\\n[paragraph 1]\\n\\n[paragraph 2]\\n\\n[paragraph 3]\\n\\nSincerely,\\n[Name]",
-  "interviewQuestions": [{ "question": "...", "category": "Technical", "tip": "..." }]
+  "changes": [{ "section": "experience", "change": "Added Docker to Senior Engineer role" }]
 }`;
 
-  const raw = await chat(
-    [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    { temperature: 0.95, topP: 0.95 }
-  );
+  // Run core tailoring + side analyses in parallel to stay within Vercel's 120s
+  // maxDuration. Side calls only need the JD + original resume context, so they
+  // do not depend on the tailored output.
+  const [coreRaw, coverLetter, interviewQuestions, atsAndGaps] = await Promise.all([
+    chat(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: corePrompt },
+      ],
+      { temperature: 0.95, topP: 0.95 }
+    ),
+    generateCoverLetter(resume, jdTrimmed, jobTitle),
+    generateInterviewQuestions(resume, jdTrimmed, jobTitle),
+    generateAtsAndGaps(resume, jdTrimmed, jobTitle),
+  ]);
 
-  let parsed: TailorResult;
+  let parsed: Partial<TailorResult>;
   try {
-    parsed = JSON.parse(extractJSON(raw)) as TailorResult;
+    parsed = JSON.parse(extractJSON(coreRaw)) as Partial<TailorResult>;
   } catch {
     throw new Error("AI returned invalid JSON. Please try again.");
+  }
+
+  if (!parsed.tailoredResume) {
+    throw new Error("AI returned no tailored resume. Please try again.");
   }
 
   // Restore content the model may have dropped or returned empty.
@@ -244,7 +252,114 @@ Return a single JSON object with this exact structure:
     }
   }
 
-  return parsed;
+  return {
+    tailoredResume: parsed.tailoredResume,
+    suggestions: parsed.suggestions || [],
+    missingKeywords: parsed.missingKeywords || [],
+    extractedSkills: parsed.extractedSkills || [],
+    atsScoreBefore: parsed.atsScoreBefore ?? 0,
+    atsScoreAfter: parsed.atsScoreAfter ?? 0,
+    keywordMatchPct: parsed.keywordMatchPct ?? 0,
+    changes: parsed.changes || [],
+    coverLetter,
+    interviewQuestions,
+    atsSimulation: atsAndGaps.atsSimulation,
+    gapClassification: atsAndGaps.gapClassification,
+  };
+}
+
+// ─── Side calls (parallel) ────────────────────────────────────────────────────
+
+async function generateCoverLetter(
+  resume: ResumeData,
+  jobDescription: string,
+  jobTitle: string
+): Promise<string> {
+  const name = resume.personalInfo?.name || "Candidate";
+  const sys = `Write a concise, human-sounding 3-paragraph cover letter. No buzzwords (spearheaded, leveraged, synergized, utilized, robust, scalable, innovative, results-driven, passionate, deep dive, ecosystem, holistic, seamlessly). Plain prose, real voice. Output JSON: { "coverLetter": "..." }`;
+  const user = `Job Title: ${jobTitle}
+Job Description: ${jobDescription}
+Candidate name: ${name}
+Top experience: ${JSON.stringify(resume.experience.slice(0, 2))}
+Top skills: ${JSON.stringify((resume.skills || []).slice(0, 3))}
+
+Return JSON: { "coverLetter": "Dear Hiring Manager,\\n\\n[3 paragraphs]\\n\\nSincerely,\\n${name}" }`;
+  try {
+    const raw = await chat(
+      [{ role: "system", content: sys }, { role: "user", content: user }],
+      { temperature: 0.9, topP: 0.95 }
+    );
+    const obj = JSON.parse(extractJSON(raw)) as { coverLetter?: string };
+    return obj.coverLetter || "";
+  } catch (e) {
+    console.warn("Cover letter generation failed:", e);
+    return "";
+  }
+}
+
+async function generateInterviewQuestions(
+  resume: ResumeData,
+  jobDescription: string,
+  jobTitle: string
+): Promise<TailorResult["interviewQuestions"]> {
+  const sys = `Generate 6-8 likely interview questions for the candidate based on the job description and their resume. Mix categories: Technical, Behavioral, System Design, Role-specific. Each question gets a short answer tip. Output JSON: { "questions": [{"question":"...","category":"Technical","tip":"..."}] }`;
+  const user = `Job Title: ${jobTitle}
+Job Description: ${jobDescription}
+Resume summary: ${resume.summary || ""}
+Experience: ${JSON.stringify(resume.experience.slice(0, 3))}
+Skills: ${JSON.stringify(resume.skills || [])}
+
+Return JSON only.`;
+  try {
+    const raw = await chat(
+      [{ role: "system", content: sys }, { role: "user", content: user }],
+      { temperature: 0.85 }
+    );
+    const obj = JSON.parse(extractJSON(raw)) as { questions?: TailorResult["interviewQuestions"] };
+    return obj.questions || [];
+  } catch (e) {
+    console.warn("Interview questions generation failed:", e);
+    return [];
+  }
+}
+
+async function generateAtsAndGaps(
+  resume: ResumeData,
+  jobDescription: string,
+  jobTitle: string
+): Promise<{ atsSimulation: TailorResult["atsSimulation"]; gapClassification: TailorResult["gapClassification"] }> {
+  const sys = `Score how the resume would perform against major ATS systems (Workday, Greenhouse, Lever, Taleo) for the given JD — each 0-100. Then classify gaps between JD requirements and resume into: dealBreakers (hard requirements missing), niceToHave (preferred but missing), framingIssues (resume has it but phrased poorly). Output JSON only.`;
+  const user = `Job Title: ${jobTitle}
+Job Description: ${jobDescription}
+Resume: ${JSON.stringify({ summary: resume.summary, experience: resume.experience, skills: resume.skills, projects: resume.projects })}
+
+Return JSON:
+{
+  "atsSimulation": { "workday": 84, "greenhouse": 89, "lever": 91, "taleo": 79, "notes": ["note"] },
+  "gapClassification": {
+    "dealBreakers": [{ "skill": "...", "reason": "..." }],
+    "niceToHave": [{ "skill": "...", "reason": "..." }],
+    "framingIssues": [{ "skill": "...", "fix": "..." }]
+  }
+}`;
+  const fallback = {
+    atsSimulation: { workday: 0, greenhouse: 0, lever: 0, taleo: 0, notes: [] as string[] },
+    gapClassification: { dealBreakers: [], niceToHave: [], framingIssues: [] },
+  };
+  try {
+    const raw = await chat(
+      [{ role: "system", content: sys }, { role: "user", content: user }],
+      { temperature: 0.6 }
+    );
+    const obj = JSON.parse(extractJSON(raw)) as Partial<typeof fallback>;
+    return {
+      atsSimulation: obj.atsSimulation || fallback.atsSimulation,
+      gapClassification: obj.gapClassification || fallback.gapClassification,
+    };
+  } catch (e) {
+    console.warn("ATS/gap analysis failed:", e);
+    return fallback;
+  }
 }
 
 // Use original resume as the structural source of truth. Only let the model
