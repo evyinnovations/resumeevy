@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Zap, Github, Twitter, Linkedin } from "lucide-react";
+import { Github, Twitter, Linkedin } from "lucide-react";
+import { LogoMark } from "@/components/shared/logo-mark";
 
 const footerLinks = {
   Product: [
@@ -32,7 +33,7 @@ export function LandingFooter() {
           <div className="col-span-2">
             <Link href="/" className="flex items-center gap-2.5 mb-5 group cursor-pointer">
               <div className="w-8 h-8 rounded-lg bg-[#1A28C1] flex items-center justify-center">
-                <Zap className="w-4 h-4 text-white" />
+                <LogoMark className="w-4 h-4 text-white" />
               </div>
               <span
                 className="font-bold text-[#0F1235] text-lg tracking-tight"

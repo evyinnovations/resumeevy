@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Zap } from "lucide-react";
+import { Menu, X } from "lucide-react";
+import { LogoMark } from "@/components/shared/logo-mark";
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -38,7 +39,7 @@ export function LandingNav() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group cursor-pointer">
             <div className="w-8 h-8 rounded-lg bg-[#1A28C1] flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
+              <LogoMark className="w-4 h-4 text-white" />
             </div>
             <span className="font-bold text-[#0F1235] text-lg tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
               ResumeEvy

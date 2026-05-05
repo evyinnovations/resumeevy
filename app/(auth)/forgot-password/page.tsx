@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Zap, AlertCircle, Loader2, CheckCircle, ArrowLeft } from "lucide-react";
+import { AlertCircle, Loader2, CheckCircle, ArrowLeft } from "lucide-react";
+import { LogoMark } from "@/components/shared/logo-mark";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -50,7 +51,7 @@ export default function ForgotPasswordPage() {
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-400 flex items-center justify-center shadow-glow-sm">
-              <Zap className="w-5 h-5 text-white" />
+              <LogoMark className="w-5 h-5 text-white" />
             </div>
             <span className="font-extrabold text-2xl gradient-text">ResumeEvy</span>
           </Link>

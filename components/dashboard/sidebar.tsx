@@ -5,11 +5,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Zap, LayoutDashboard, FileText, Wand2,
+  LayoutDashboard, FileText, Wand2,
   Palette, Download, CreditCard, Settings, ChevronLeft,
   ChevronRight, User, Briefcase, Mail, X, Menu, Sparkles, ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LogoMark } from "@/components/shared/logo-mark";
 
 const navItems = [
   {
@@ -51,7 +52,7 @@ export function DashboardSidebar({ role }: { role?: string }) {
       <div className={`flex items-center mb-8 ${collapsed ? "justify-center" : "justify-between"}`}>
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-brand-700 flex items-center justify-center flex-shrink-0">
-            <Zap className="w-4 h-4 text-white" />
+            <LogoMark className="w-4 h-4 text-white" />
           </div>
           {!collapsed && (
             <span className="font-extrabold text-lg text-slate-900 tracking-tight">ResumeEvy</span>
