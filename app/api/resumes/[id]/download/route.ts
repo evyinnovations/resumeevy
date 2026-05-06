@@ -5,8 +5,53 @@ import jsPDF from "jspdf";
 import {
   Document, Packer, Paragraph, TextRun,
   AlignmentType, BorderStyle,
+  Table, TableRow, TableCell, WidthType,
   convertInchesToTwip,
 } from "docx";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Strip Unicode punctuation that PDF helvetica/Calibri renders as garbage.
+function clean(s: string | null | undefined): string {
+  if (!s) return "";
+  return s
+    .replace(/[—–]/g, "-")
+    .replace(/[‘’‚‛]/g, "'")
+    .replace(/[“”„‟]/g, '"')
+    .replace(/…/g, "...")
+    .replace(/ /g, " ")
+    .replace(/•/g, "-")
+    .replace(/[‐-―]/g, "-");
+}
+
+// Normalize a token for keyword matching. Lower-case, alphanumeric only.
+function normKw(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9+#.]/g, "");
+}
+
+function buildKeywordSet(keywords: string[]): Set<string> {
+  const set = new Set<string>();
+  for (const k of keywords) {
+    const n = normKw(k);
+    if (n.length >= 2) set.add(n);
+  }
+  return set;
+}
+
+function isKeywordToken(token: string, kwSet: Set<string>): boolean {
+  const n = normKw(token);
+  return n.length >= 2 && kwSet.has(n);
+}
+
+function safeJsonArr(s: string | null | undefined): string[] {
+  if (!s) return [];
+  try {
+    const v = JSON.parse(s);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export async function GET(
   req: NextRequest,
@@ -30,6 +75,19 @@ export async function GET(
       .replace(/\s+/g, "-")
       .substring(0, 100) || "resume";
 
+    // If this resume came from a tailor job, pull the JD keywords so we can
+    // bold them in the rendered output.
+    const tailorJob = await prisma.tailorJob.findFirst({
+      where: { tailoredResumeId: resume.id },
+      orderBy: { createdAt: "desc" },
+    });
+    const keywords: string[] = tailorJob
+      ? [
+          ...safeJsonArr(tailorJob.extractedSkills),
+          ...safeJsonArr(tailorJob.missingKeywords),
+        ]
+      : [];
+
     // Parse JSON string fields from SQLite
     const parsedResume = {
       ...resume,
@@ -42,7 +100,7 @@ export async function GET(
     };
 
     if (format === "pdf") {
-      const pdf = generatePDF(parsedResume);
+      const pdf = generatePDF(parsedResume, keywords);
       const pdfBytes = pdf.output("arraybuffer");
 
       await prisma.usageStats.upsert({
@@ -60,7 +118,7 @@ export async function GET(
     }
 
     if (format === "docx") {
-      const docxBuffer = await generateDocx(parsedResume);
+      const docxBuffer = await generateDocx(parsedResume, keywords);
       const docxArrayBuffer = docxBuffer.buffer.slice(
         docxBuffer.byteOffset,
         docxBuffer.byteOffset + docxBuffer.byteLength
@@ -98,12 +156,14 @@ function generatePDF(resume: {
   skills: unknown;
   projects: unknown;
   certifications?: unknown;
-}) {
+}, keywords: string[] = []) {
   const pdf = new jsPDF({ format: "letter", unit: "pt" });
   const info = resume.personalInfo as Record<string, string>;
   const margin = 48;
   const pageWidth = pdf.internal.pageSize.width;
   const contentWidth = pageWidth - margin * 2;
+  const lineH = 11;
+  const kwSet = buildKeywordSet(keywords);
   let y = margin;
 
   const checkPageBreak = (needed = 40) => {
@@ -113,13 +173,47 @@ function generatePDF(resume: {
     }
   };
 
+  // Render text with per-token bold highlighting for keyword matches.
+  // Handles word wrapping. Advances y. Returns nothing (mutates y).
+  const drawHighlighted = (
+    text: string,
+    x: number,
+    maxWidth: number,
+    fontSize: number,
+    baseColor: [number, number, number] = [50, 50, 50]
+  ) => {
+    const tokens = clean(text).split(/(\s+)/);
+    pdf.setFontSize(fontSize);
+    let cx = x;
+    for (const tok of tokens) {
+      if (!tok) continue;
+      if (/^\s+$/.test(tok)) {
+        pdf.setFont("helvetica", "normal");
+        const w = pdf.getTextWidth(tok);
+        if (cx + w > x + maxWidth) { y += lineH; cx = x; }
+        else { cx += w; }
+        continue;
+      }
+      const isKw = isKeywordToken(tok, kwSet);
+      pdf.setFont("helvetica", isKw ? "bold" : "normal");
+      if (isKw) pdf.setTextColor(26, 40, 193);
+      else pdf.setTextColor(...baseColor);
+      const w = pdf.getTextWidth(tok);
+      if (cx + w > x + maxWidth) { y += lineH; cx = x; checkPageBreak(lineH); }
+      pdf.text(tok, cx, y);
+      cx += w;
+    }
+    pdf.setTextColor(...baseColor);
+    y += lineH;
+  };
+
   const sectionHeader = (title: string) => {
     checkPageBreak(30);
     y += 6;
     pdf.setFontSize(10);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(26, 40, 193); // brand blue
-    pdf.text(title.toUpperCase(), margin, y);
+    pdf.text(clean(title).toUpperCase(), margin, y);
     y += 4;
     pdf.setDrawColor(26, 40, 193);
     pdf.setLineWidth(0.75);
@@ -132,19 +226,19 @@ function generatePDF(resume: {
   pdf.setFontSize(20);
   pdf.setFont("helvetica", "bold");
   pdf.setTextColor(15, 23, 42);
-  pdf.text(info.name || "Your Name", pageWidth / 2, y, { align: "center" });
+  pdf.text(clean(info.name) || "Your Name", pageWidth / 2, y, { align: "center" });
   y += 20;
 
   if (info.title) {
     pdf.setFontSize(11);
     pdf.setFont("helvetica", "normal");
     pdf.setTextColor(26, 40, 193);
-    pdf.text(info.title, pageWidth / 2, y, { align: "center" });
+    pdf.text(clean(info.title), pageWidth / 2, y, { align: "center" });
     y += 16;
   }
 
   const contactParts = [info.email, info.phone, info.location, info.linkedin, info.github]
-    .filter(Boolean) as string[];
+    .filter(Boolean).map(clean) as string[];
   if (contactParts.length > 0) {
     pdf.setFontSize(8.5);
     pdf.setFont("helvetica", "normal");
@@ -162,35 +256,76 @@ function generatePDF(resume: {
   // ─── Summary ──────────────────────────────────────────────────────────────
   if (resume.summary) {
     sectionHeader("Professional Summary");
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "normal");
-    pdf.setTextColor(50, 50, 50);
-    const lines = pdf.splitTextToSize(resume.summary, contentWidth);
-    checkPageBreak(lines.length * 11 + 8);
-    pdf.text(lines, margin, y);
-    y += lines.length * 11 + 8;
+    drawHighlighted(resume.summary, margin, contentWidth, 9);
+    y += 4;
   }
 
-  // ─── Skills ───────────────────────────────────────────────────────────────
+  // ─── Skills (table) ───────────────────────────────────────────────────────
   const skills = (resume.skills as Array<{ category: string; items: string[] }>) || [];
   if (skills.length > 0) {
     sectionHeader("Skills");
+    const catW = 130;                          // left column
+    const itemW = contentWidth - catW;          // right column
+    const cellPadX = 6;
+    const cellPadY = 5;
+
+    pdf.setDrawColor(216, 216, 240);            // soft brand line
+    pdf.setLineWidth(0.5);
+
     for (const group of skills) {
       if (!group.items?.length) continue;
-      checkPageBreak(14);
+      const cat = clean(group.category);
+      const itemsText = group.items.map(clean).join(", ");
+
       pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      const itemLines = pdf.splitTextToSize(itemsText, itemW - cellPadX * 2);
+      const rowH = Math.max(itemLines.length * lineH, lineH) + cellPadY * 2;
+      checkPageBreak(rowH + 2);
+
+      // Left cell — category (bold)
       pdf.setFont("helvetica", "bold");
       pdf.setTextColor(15, 23, 42);
-      const label = `${group.category}: `;
-      const labelWidth = pdf.getTextWidth(label);
-      pdf.text(label, margin, y);
+      pdf.text(cat, margin + cellPadX, y + cellPadY + 8);
+
+      // Right cell — items (highlight keywords inline)
       pdf.setFont("helvetica", "normal");
       pdf.setTextColor(50, 50, 50);
-      const itemLines = pdf.splitTextToSize(group.items.join(", "), contentWidth - labelWidth);
-      pdf.text(itemLines[0], margin + labelWidth, y);
-      for (let i = 1; i < itemLines.length; i++) { y += 11; pdf.text(itemLines[i], margin, y); }
-      y += 12;
+      let cy = y + cellPadY + 8;
+      for (const line of itemLines) {
+        // tokenize for keyword bold
+        const tokens = line.split(/(,\s*)/);
+        let cx = margin + catW + cellPadX;
+        for (const tok of tokens) {
+          if (!tok) continue;
+          if (/^,\s*$/.test(tok)) {
+            pdf.setFont("helvetica", "normal");
+            pdf.setTextColor(50, 50, 50);
+            pdf.text(tok, cx, cy);
+            cx += pdf.getTextWidth(tok);
+            continue;
+          }
+          const isKw = isKeywordToken(tok, kwSet);
+          pdf.setFont("helvetica", isKw ? "bold" : "normal");
+          pdf.setTextColor(...(isKw ? [26, 40, 193] as [number, number, number] : [50, 50, 50] as [number, number, number]));
+          pdf.text(tok, cx, cy);
+          cx += pdf.getTextWidth(tok);
+        }
+        cy += lineH;
+      }
+
+      // Borders
+      pdf.setDrawColor(216, 216, 240);
+      pdf.line(margin, y, margin + contentWidth, y);                    // top
+      pdf.line(margin, y + rowH, margin + contentWidth, y + rowH);      // bottom
+      pdf.line(margin, y, margin, y + rowH);                            // left
+      pdf.line(margin + catW, y, margin + catW, y + rowH);              // mid
+      pdf.line(margin + contentWidth, y, margin + contentWidth, y + rowH); // right
+
+      y += rowH;
     }
+    y += 6;
+    pdf.setTextColor(50, 50, 50);
   }
 
   // ─── Projects ─────────────────────────────────────────────────────────────
@@ -202,21 +337,19 @@ function generatePDF(resume: {
     for (const proj of projects) {
       checkPageBreak(35);
       pdf.setFontSize(10); pdf.setFont("helvetica", "bold"); pdf.setTextColor(15, 23, 42);
-      pdf.text(proj.name, margin, y); y += 13;
+      pdf.text(clean(proj.name), margin, y); y += 13;
       if (proj.description) {
-        pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(50, 50, 50);
-        const dLines = pdf.splitTextToSize(proj.description, contentWidth);
-        checkPageBreak(dLines.length * 11); pdf.text(dLines, margin, y); y += dLines.length * 11;
+        drawHighlighted(proj.description, margin, contentWidth, 9);
       }
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(45, 45, 45);
       for (const b of (proj.bullets || [])) {
         if (!b?.trim()) continue;
-        const bLines = pdf.splitTextToSize(`• ${b}`, contentWidth - 8);
-        checkPageBreak(bLines.length * 11); pdf.text(bLines, margin + 6, y); y += bLines.length * 11;
+        pdf.setFontSize(9); pdf.setFont("helvetica", "normal"); pdf.setTextColor(45, 45, 45);
+        pdf.text("-", margin + 2, y);
+        drawHighlighted(b, margin + 10, contentWidth - 10, 9, [45, 45, 45]);
       }
       if (proj.tech?.length) {
         pdf.setFont("helvetica", "italic"); pdf.setFontSize(8.5); pdf.setTextColor(100, 100, 100);
-        pdf.text(`Tech: ${proj.tech.join(", ")}`, margin, y); y += 12;
+        pdf.text(`Tech: ${proj.tech.map(clean).join(", ")}`, margin, y); y += 12;
       }
       y += 4;
     }
@@ -229,9 +362,9 @@ function generatePDF(resume: {
     for (const cert of certs) {
       checkPageBreak(20);
       pdf.setFontSize(9); pdf.setFont("helvetica", "bold"); pdf.setTextColor(15, 23, 42);
-      pdf.text(cert.name, margin, y);
+      pdf.text(clean(cert.name), margin, y);
       pdf.setFont("helvetica", "normal"); pdf.setTextColor(80, 80, 80);
-      pdf.text([cert.issuer, cert.date].filter(Boolean).join("  ·  "), pageWidth - margin, y, { align: "right" });
+      pdf.text([clean(cert.issuer), clean(cert.date)].filter(Boolean).join("  -  "), pageWidth - margin, y, { align: "right" });
       y += 13;
     }
   }
@@ -246,17 +379,17 @@ function generatePDF(resume: {
     for (const exp of experience) {
       checkPageBreak(45);
       pdf.setFontSize(10); pdf.setFont("helvetica", "bold"); pdf.setTextColor(15, 23, 42);
-      pdf.text(exp.title, margin, y);
-      const period = exp.current ? `${exp.startDate} – Present` : `${exp.startDate} – ${exp.endDate || ""}`;
+      pdf.text(clean(exp.title), margin, y);
+      const period = exp.current ? `${clean(exp.startDate)} - Present` : `${clean(exp.startDate)} - ${clean(exp.endDate)}`;
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(8.5); pdf.setTextColor(100, 100, 100);
       pdf.text(period, pageWidth - margin, y, { align: "right" }); y += 13;
       pdf.setFont("helvetica", "italic"); pdf.setFontSize(9); pdf.setTextColor(70, 70, 70);
-      pdf.text(`${exp.company}${exp.location ? ",  " + exp.location : ""}`, margin, y); y += 13;
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(45, 45, 45);
+      pdf.text(`${clean(exp.company)}${exp.location ? ",  " + clean(exp.location) : ""}`, margin, y); y += 13;
       for (const b of (exp.bullets || [])) {
         if (!b?.trim()) continue;
-        const bLines = pdf.splitTextToSize(`• ${b}`, contentWidth - 8);
-        checkPageBreak(bLines.length * 11); pdf.text(bLines, margin + 6, y); y += bLines.length * 11;
+        pdf.setFontSize(9); pdf.setFont("helvetica", "normal"); pdf.setTextColor(45, 45, 45);
+        pdf.text("-", margin + 2, y);
+        drawHighlighted(b, margin + 10, contentWidth - 10, 9, [45, 45, 45]);
       }
       y += 6;
     }
@@ -271,11 +404,11 @@ function generatePDF(resume: {
     for (const edu of education) {
       checkPageBreak(35);
       pdf.setFontSize(10); pdf.setFont("helvetica", "bold"); pdf.setTextColor(15, 23, 42);
-      pdf.text(`${edu.degree}${edu.field ? " in " + edu.field : ""}`, margin, y);
-      if (edu.endDate) { pdf.setFont("helvetica", "normal"); pdf.setFontSize(8.5); pdf.setTextColor(100, 100, 100); pdf.text(edu.endDate, pageWidth - margin, y, { align: "right" }); }
+      pdf.text(`${clean(edu.degree)}${edu.field ? " in " + clean(edu.field) : ""}`, margin, y);
+      if (edu.endDate) { pdf.setFont("helvetica", "normal"); pdf.setFontSize(8.5); pdf.setTextColor(100, 100, 100); pdf.text(clean(edu.endDate), pageWidth - margin, y, { align: "right" }); }
       y += 13;
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(70, 70, 70);
-      pdf.text(edu.school + (edu.gpa ? `   GPA: ${edu.gpa}` : ""), margin, y); y += 14;
+      pdf.text(clean(edu.school) + (edu.gpa ? `   GPA: ${clean(edu.gpa)}` : ""), margin, y); y += 14;
     }
   }
 
@@ -293,7 +426,30 @@ async function generateDocx(resume: {
   skills: unknown;
   projects: unknown;
   certifications?: unknown;
-}): Promise<Buffer> {
+}, keywords: string[] = []): Promise<Buffer> {
+  const kwSet = buildKeywordSet(keywords);
+  const BLUE = "1A28C1";
+  const DARK = "0F172A";
+  const GRAY = "64748B";
+  const MID  = "334155";
+
+  // Build TextRuns from a string, bolding tokens that match a JD keyword.
+  const highlightedRuns = (text: string, opts: { size?: number; color?: string; italics?: boolean } = {}): TextRun[] => {
+    const size = opts.size ?? 19;
+    const color = opts.color ?? MID;
+    const tokens = clean(text).split(/(\s+|,)/);
+    return tokens.filter(Boolean).map((tok) => {
+      const isKw = isKeywordToken(tok, kwSet);
+      return new TextRun({
+        text: tok,
+        bold: isKw,
+        italics: opts.italics,
+        size,
+        color: isKw ? BLUE : color,
+        font: "Calibri",
+      });
+    });
+  };
   const info = resume.personalInfo as Record<string, string>;
   const experience = (resume.experience as Array<{
     title: string; company: string; location?: string;
@@ -311,15 +467,10 @@ async function generateDocx(resume: {
     name: string; issuer: string; date?: string;
   }>) || [];
 
-  const BLUE = "1A28C1";
-  const DARK = "0F172A";
-  const GRAY = "64748B";
-  const MID  = "334155";
-
   const sectionHeading = (text: string): Paragraph =>
     new Paragraph({
       children: [
-        new TextRun({ text: text.toUpperCase(), bold: true, size: 22, color: BLUE, font: "Calibri" }),
+        new TextRun({ text: clean(text).toUpperCase(), bold: true, size: 22, color: BLUE, font: "Calibri" }),
       ],
       spacing: { before: 260, after: 60 },
       border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: "DBEAFE", space: 4 } },
@@ -327,17 +478,20 @@ async function generateDocx(resume: {
 
   const bulletPara = (text: string): Paragraph =>
     new Paragraph({
-      children: [new TextRun({ text: `• ${text}`, size: 19, color: MID, font: "Calibri" })],
+      children: [
+        new TextRun({ text: "- ", size: 19, color: MID, font: "Calibri" }),
+        ...highlightedRuns(text),
+      ],
       indent: { left: convertInchesToTwip(0.2) },
       spacing: { after: 50 },
     });
 
-  const children: Paragraph[] = [];
+  const children: (Paragraph | Table)[] = [];
 
   // ── Header ────────────────────────────────────────────────────────────────
   children.push(
     new Paragraph({
-      children: [new TextRun({ text: info.name || "Your Name", bold: true, size: 52, color: DARK, font: "Calibri" })],
+      children: [new TextRun({ text: clean(info.name) || "Your Name", bold: true, size: 52, color: DARK, font: "Calibri" })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 60 },
     })
@@ -346,14 +500,14 @@ async function generateDocx(resume: {
   if (info.title) {
     children.push(
       new Paragraph({
-        children: [new TextRun({ text: info.title, size: 24, color: BLUE, font: "Calibri" })],
+        children: [new TextRun({ text: clean(info.title), size: 24, color: BLUE, font: "Calibri" })],
         alignment: AlignmentType.CENTER,
         spacing: { after: 80 },
       })
     );
   }
 
-  const contactParts = [info.email, info.phone, info.location, info.linkedin, info.github].filter(Boolean) as string[];
+  const contactParts = [info.email, info.phone, info.location, info.linkedin, info.github].filter(Boolean).map(clean) as string[];
   if (contactParts.length > 0) {
     children.push(
       new Paragraph({
@@ -370,25 +524,44 @@ async function generateDocx(resume: {
     children.push(sectionHeading("Professional Summary"));
     children.push(
       new Paragraph({
-        children: [new TextRun({ text: resume.summary, size: 19, color: MID, font: "Calibri" })],
+        children: highlightedRuns(resume.summary),
         spacing: { after: 120 },
       })
     );
   }
 
-  // ── Skills ────────────────────────────────────────────────────────────────
+  // ── Skills (table) ────────────────────────────────────────────────────────
   if (skills.length > 0) {
     children.push(sectionHeading("Skills"));
-    for (const group of skills) {
-      if (!group.items?.length) continue;
-      children.push(new Paragraph({
+    const cellBorder = { style: BorderStyle.SINGLE, size: 4, color: "D8D8F0" };
+    const borders = { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder };
+    const skillRows: TableRow[] = skills
+      .filter((g) => g.items?.length)
+      .map((group) => new TableRow({
         children: [
-          new TextRun({ text: `${group.category}: `, bold: true, size: 20, color: DARK, font: "Calibri" }),
-          new TextRun({ text: group.items.join(", "), size: 19, color: MID, font: "Calibri" }),
+          new TableCell({
+            width: { size: 28, type: WidthType.PERCENTAGE },
+            margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            borders,
+            children: [new Paragraph({
+              children: [new TextRun({ text: clean(group.category), bold: true, size: 20, color: DARK, font: "Calibri" })],
+            })],
+          }),
+          new TableCell({
+            width: { size: 72, type: WidthType.PERCENTAGE },
+            margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            borders,
+            children: [new Paragraph({
+              children: highlightedRuns(group.items.join(", "), { size: 19, color: MID }),
+            })],
+          }),
         ],
-        spacing: { after: 60 },
       }));
-    }
+    children.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: skillRows,
+    }));
+    children.push(new Paragraph({ children: [], spacing: { after: 60 } }));
   }
 
   // ── Projects ─────────────────────────────────────────────────────────────
@@ -396,19 +569,19 @@ async function generateDocx(resume: {
     children.push(sectionHeading("Projects"));
     for (const proj of projects) {
       children.push(new Paragraph({
-        children: [new TextRun({ text: proj.name, bold: true, size: 22, color: DARK, font: "Calibri" })],
+        children: [new TextRun({ text: clean(proj.name), bold: true, size: 22, color: DARK, font: "Calibri" })],
         spacing: { before: 100, after: 30 },
       }));
       if (proj.description) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: proj.description, size: 19, color: MID, font: "Calibri" })],
+          children: highlightedRuns(proj.description),
           spacing: { after: 40 },
         }));
       }
       for (const b of (proj.bullets || [])) { if (b?.trim()) children.push(bulletPara(b)); }
       if (proj.tech?.length) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: `Tech: ${proj.tech.join(", ")}`, italics: true, size: 18, color: GRAY, font: "Calibri" })],
+          children: [new TextRun({ text: `Tech: ${proj.tech.map(clean).join(", ")}`, italics: true, size: 18, color: GRAY, font: "Calibri" })],
           spacing: { after: 60 },
         }));
       }
@@ -421,8 +594,8 @@ async function generateDocx(resume: {
     for (const cert of certs) {
       children.push(new Paragraph({
         children: [
-          new TextRun({ text: cert.name, bold: true, size: 20, color: DARK, font: "Calibri" }),
-          new TextRun({ text: `   ${cert.issuer}${cert.date ? "  ·  " + cert.date : ""}`, size: 18, color: GRAY, font: "Calibri" }),
+          new TextRun({ text: clean(cert.name), bold: true, size: 20, color: DARK, font: "Calibri" }),
+          new TextRun({ text: `   ${clean(cert.issuer)}${cert.date ? "  -  " + clean(cert.date) : ""}`, size: 18, color: GRAY, font: "Calibri" }),
         ],
         spacing: { after: 60 },
       }));
@@ -433,16 +606,16 @@ async function generateDocx(resume: {
   if (experience.length > 0) {
     children.push(sectionHeading("Professional Experience"));
     for (const exp of experience) {
-      const period = exp.current ? `${exp.startDate} – Present` : `${exp.startDate} – ${exp.endDate || ""}`;
+      const period = exp.current ? `${clean(exp.startDate)} - Present` : `${clean(exp.startDate)} - ${clean(exp.endDate)}`;
       children.push(new Paragraph({
         children: [
-          new TextRun({ text: exp.title, bold: true, size: 22, color: DARK, font: "Calibri" }),
+          new TextRun({ text: clean(exp.title), bold: true, size: 22, color: DARK, font: "Calibri" }),
           new TextRun({ text: `   ${period}`, size: 18, color: GRAY, font: "Calibri" }),
         ],
         spacing: { before: 140, after: 30 },
       }));
       children.push(new Paragraph({
-        children: [new TextRun({ text: `${exp.company}${exp.location ? ",  " + exp.location : ""}`, italics: true, size: 19, color: GRAY, font: "Calibri" })],
+        children: [new TextRun({ text: `${clean(exp.company)}${exp.location ? ",  " + clean(exp.location) : ""}`, italics: true, size: 19, color: GRAY, font: "Calibri" })],
         spacing: { after: 60 },
       }));
       for (const b of (exp.bullets || [])) { if (b?.trim()) children.push(bulletPara(b)); }
@@ -455,15 +628,15 @@ async function generateDocx(resume: {
     for (const edu of education) {
       children.push(new Paragraph({
         children: [
-          new TextRun({ text: `${edu.degree}${edu.field ? " in " + edu.field : ""}`, bold: true, size: 22, color: DARK, font: "Calibri" }),
-          new TextRun({ text: edu.endDate ? `   ${edu.endDate}` : "", size: 18, color: GRAY, font: "Calibri" }),
+          new TextRun({ text: `${clean(edu.degree)}${edu.field ? " in " + clean(edu.field) : ""}`, bold: true, size: 22, color: DARK, font: "Calibri" }),
+          new TextRun({ text: edu.endDate ? `   ${clean(edu.endDate)}` : "", size: 18, color: GRAY, font: "Calibri" }),
         ],
         spacing: { before: 100, after: 30 },
       }));
       children.push(new Paragraph({
         children: [
-          new TextRun({ text: edu.school, size: 19, color: GRAY, font: "Calibri" }),
-          ...(edu.gpa ? [new TextRun({ text: `   GPA: ${edu.gpa}`, size: 18, color: GRAY, font: "Calibri" })] : []),
+          new TextRun({ text: clean(edu.school), size: 19, color: GRAY, font: "Calibri" }),
+          ...(edu.gpa ? [new TextRun({ text: `   GPA: ${clean(edu.gpa)}`, size: 18, color: GRAY, font: "Calibri" })] : []),
         ],
         spacing: { after: 80 },
       }));

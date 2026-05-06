@@ -184,7 +184,7 @@ ANTI-AI-DETECTOR RULES (highest priority — violating these makes output unusab
 
 4. DOMAIN slang. Use natural professional speech where it fits: "wired up", "shipped behind a flag", "moved off", "stood up", "ripped out", "ran point on", "got rid of", "flaky tests", "noisy alerts", "took over", "owned end-to-end".
 
-5. ONE stylistic quirk per role minimum: an em-dash mid-sentence, a colon-led clause, a parenthetical aside, or a fragment.
+5. ONE stylistic quirk per role minimum: a colon-led clause, a parenthetical aside, or a fragment. Do NOT use em-dashes, en-dashes, smart quotes, or ellipsis characters — use plain ASCII (- " ' ...) only, since downstream PDF rendering breaks on Unicode punctuation.
 
 6. BANNED words/phrases (never appear): spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative, comprehensive, ensured, facilitated, implemented, in order to, as well as, key stakeholders, deliverables, synergies, best practices, state-of-the-art.
 
@@ -196,9 +196,18 @@ ANTI-AI-DETECTOR RULES (highest priority — violating these makes output unusab
 
 10. Write like the person told a friend over coffee, then cleaned it up. Voice over polish.`;
 
-  const corePrompt = `Job Title: ${jobTitle}
+  // Inject a per-call nonce + timestamp so re-tailoring the same resume + JD
+  // produces a different rewording each time. Without this, Gemini tends to
+  // converge on near-identical output for identical input.
+  const variationSeed = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  const corePrompt = `Variation seed (use as inspiration to vary phrasing — do not echo): ${variationSeed}
+
+Job Title: ${jobTitle}
 Job Description: ${jdTrimmed}
 Resume: ${JSON.stringify(resume)}
+
+Rewrite the resume fresh — do NOT reuse phrasing from any prior tailor of this resume. Pick different verbs, different sentence structures, and different bullet orderings than a typical safe rewrite would.
 
 Return a single JSON object with this exact structure:
 {
@@ -242,15 +251,20 @@ Return a single JSON object with this exact structure:
   // Restore content the model may have dropped or returned empty.
   parsed.tailoredResume = restoreMissingFields(parsed.tailoredResume, resume);
 
-  // Second pass: humanize the tailored content to defeat AI detectors.
-  // Gated by env flag — adds a second LLM call which can blow Vercel timeout.
-  if (process.env.HUMANIZE_PASS_ENABLED === "true") {
+  // Second pass: humanize tailored content to defeat AI detectors. Default ON.
+  // Set HUMANIZE_PASS_ENABLED="false" to opt out (e.g. if hitting Vercel
+  // timeout). With thinkingBudget=0 + parallel side calls, this fits in 120s.
+  if (process.env.HUMANIZE_PASS_ENABLED !== "false") {
     try {
       parsed.tailoredResume = await humanizeResumeContent(parsed.tailoredResume);
     } catch (e) {
       console.warn("Humanize pass failed:", e);
     }
   }
+
+  // Strip non-ASCII punctuation that breaks PDF rendering (smart quotes,
+  // em/en dashes, ellipsis). Belt-and-braces — the prompt also forbids them.
+  parsed.tailoredResume = sanitizeResumeText(parsed.tailoredResume);
 
   return {
     tailoredResume: parsed.tailoredResume,
@@ -265,6 +279,40 @@ Return a single JSON object with this exact structure:
     interviewQuestions,
     atsSimulation: atsAndGaps.atsSimulation,
     gapClassification: atsAndGaps.gapClassification,
+  };
+}
+
+// ─── Text sanitizer ──────────────────────────────────────────────────────────
+// Replace Unicode punctuation that PDF/DOCX renderers garble into ?? or --.
+
+function sanitizeText(s: string): string {
+  return s
+    .replace(/[—–]/g, "-")    // em-dash, en-dash → hyphen
+    .replace(/[‘’‚‛]/g, "'") // smart single quotes
+    .replace(/[“”„‟]/g, '"') // smart double quotes
+    .replace(/…/g, "...")          // ellipsis
+    .replace(/ /g, " ")            // non-breaking space
+    .replace(/•/g, "-")            // bullet • → -
+    .replace(/[‐-―]/g, "-");  // any other dash variants
+}
+
+function sanitizeResumeText(r: ResumeData): ResumeData {
+  return {
+    ...r,
+    summary: r.summary ? sanitizeText(r.summary) : r.summary,
+    experience: r.experience.map((e) => ({
+      ...e,
+      bullets: e.bullets.map(sanitizeText),
+    })),
+    projects: r.projects.map((p) => ({
+      ...p,
+      description: p.description ? sanitizeText(p.description) : p.description,
+      bullets: (p.bullets || []).map(sanitizeText),
+    })),
+    skills: r.skills.map((g) => ({
+      ...g,
+      items: g.items.map(sanitizeText),
+    })),
   };
 }
 
