@@ -153,48 +153,33 @@ export async function tailorResume(
   // Trim job description to ~3000 chars to stay within token limits
   const jdTrimmed = jobDescription.slice(0, 3000);
 
-  const systemPrompt = `You are a resume editor. Your output must read like a real working professional wrote it — not AI. Output that fails AI-detector tools (GPTZero, Originality.ai, Copyleaks, ZeroGPT) is unacceptable.
+  const systemPrompt = `You are a senior resume editor. Tailor the resume to the job description with a clean, professional, recruiter-ready tone. The result must be tight and non-repetitive — quality over quantity.
 
-JOB:
-- Output tailoredResume MUST include EVERY experience role from the input — same count, same order, same id, company, title, location, dates. Never omit a role.
-- Output tailoredResume MUST include EVERY project from the input — same id, name, tech, url. Never omit a project.
-- Keep personalInfo, education, and certifications exactly as-is
-- ALWAYS include a "summary" field — if input has one, refine it for the JD; if missing, write a 2-3 sentence professional summary aligned to the JD
-- For experience: PRESERVE every existing bullet for every role (never drop a bullet) and append 2-4 NEW bullets per role that match key JD requirements (tools, methodologies, outcomes). Frame new bullets as things the candidate plausibly did in that role even if not listed
-- If a role in input has empty bullets, generate 5-7 fresh bullets for it based on the role title/company/dates and the JD
-- Every experience role MUST end with a non-empty "bullets" array of strings — never return an empty bullets array
-- Add missing JD keywords into existing AND new bullets naturally
-- Keep bullets concise, impact-driven
-- Add any missing skills from the JD to the skills section (preserve all existing skill groups)
-- Return ONLY valid JSON
+STRUCTURE (must hold):
+- tailoredResume MUST include EVERY experience role from the input — same count, same order, same id, company, title, location, dates. Never omit a role.
+- tailoredResume MUST include EVERY project from the input — same id, name, tech, url. Never omit a project.
+- personalInfo, education, certifications: copy through unchanged.
+- summary: always include. 2-3 sentences max. Plain prose aligned to the JD. No buzzwords, no first-person pronouns.
 
-ANTI-AI-DETECTOR RULES (highest priority — violating these makes output unusable):
+CONTENT RULES (this is what fixes the bloat):
+- Each experience role: 3 to 5 bullets. Hard cap 5. Pick the strongest, most JD-relevant content. Rewrite weak originals, drop redundant ones, add missing JD-aligned ones. Every bullet is a DISTINCT accomplishment — no two bullets in the same role may describe the same work, the same tool stack, or the same outcome.
+- Across the whole resume, do NOT restate the same achievement in two roles. If two roles share a theme (e.g. CI/CD ownership), each must show a different angle.
+- If an input role has empty bullets, generate 3-4 fresh role-appropriate bullets aligned to the JD.
+- Each project: 2 to 4 bullets, same anti-repetition rules.
+- Each bullet under 25 words. Lead with a strong verb or quantified outcome. Include one concrete detail (number, tool, scope, system) where credible.
 
-1. BURSTY rhythm. Alternate very short bullets (5-9 words) with longer ones (16-24 words). Never put 3 similar-length bullets in a row. AI detectors flag uniform length.
+SKILLS (this is what fixes inflation):
+- 4 to 6 skill groups max. 6 to 10 items per group. Hard caps.
+- Only include skills supported by the candidate's actual experience, projects, or original skills list. Do NOT add a JD skill the candidate has no plausible exposure to. No keyword stuffing.
+- No duplicates across groups (case-insensitive). Group names should be standard (e.g. "Languages", "Frameworks", "Cloud & DevOps", "Databases", "Tools").
 
-2. NON-PARALLEL openings. Do NOT start every bullet with a past-tense verb. Across a single role, mix:
-   - Plain verb: "Built the retry logic for..."
-   - Context first: "After a bad incident, rewrote the..."
-   - Number first: "40% fewer pages for oncall after..."
-   - Tool/situation first: "On the new pipeline, owned..."
-   - Fragment: "Cut DB writes 3x. Found a race condition in..."
-   At least 3 different opening styles per role.
+TONE:
+- Clean, neutral, professional. Standard resume verbs: built, led, designed, owned, shipped, delivered, reduced, improved, managed, drove, mentored, scaled, migrated, automated.
+- No slang, no fragments, no parenthetical asides, no colon-led quirks. Complete sentences (or strong bullet phrases) only.
+- Plain ASCII punctuation only. No em-dashes, en-dashes, smart quotes, ellipsis characters, or bullet glyphs.
+- BANNED words/phrases: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, holistic, seamlessly, proactively, transformative, comprehensive, ensured, facilitated, in order to, as well as, key stakeholders, deliverables, synergies, best practices, state-of-the-art, thought leader, results-driven, passionate, dynamic, robust, innovative, deep dive, ecosystem, paradigm.
 
-3. IMPERFECT numbers. Use "around 40%", "roughly 8 hrs/week", "~150ms", "about 12 engineers" sometimes — not always clean round numbers. Real people estimate.
-
-4. DOMAIN slang. Use natural professional speech where it fits: "wired up", "shipped behind a flag", "moved off", "stood up", "ripped out", "ran point on", "got rid of", "flaky tests", "noisy alerts", "took over", "owned end-to-end".
-
-5. ONE stylistic quirk per role minimum: a colon-led clause, a parenthetical aside, or a fragment. Do NOT use em-dashes, en-dashes, smart quotes, or ellipsis characters — use plain ASCII (- " ' ...) only, since downstream PDF rendering breaks on Unicode punctuation.
-
-6. BANNED words/phrases (never appear): spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, best-in-class, game-changing, revolutionized, harnessed, pivotal, robust, scalable, innovative, dynamic, passionate, results-driven, thought leader, deep dive, ecosystem, paradigm, holistic, seamlessly, proactively, overarching, transformative, comprehensive, ensured, facilitated, implemented, in order to, as well as, key stakeholders, deliverables, synergies, best practices, state-of-the-art.
-
-7. PREFERRED verbs: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, helped, managed, worked on, set up, moved, owned, drove, hired, killed, replaced, rewrote, debugged, profiled, tuned, scoped, pitched, mentored, paired.
-
-8. NO templated phrasing. Avoid the pattern "[verb] [thing] [resulting in/leading to/which] [metric]" repeating 3+ times in a section. Vary the connector and structure.
-
-9. ONE concrete detail per bullet — a number, a tool name, a team size, a deadline, a system. Vague claims look AI-written.
-
-10. Write like the person told a friend over coffee, then cleaned it up. Voice over polish.`;
+Return ONLY valid JSON.`;
 
   // Inject a per-call nonce + timestamp so re-tailoring the same resume + JD
   // produces a different rewording each time. Without this, Gemini tends to
@@ -251,10 +236,10 @@ Return a single JSON object with this exact structure:
   // Restore content the model may have dropped or returned empty.
   parsed.tailoredResume = restoreMissingFields(parsed.tailoredResume, resume);
 
-  // Second pass: humanize tailored content to defeat AI detectors. Default ON.
-  // Set HUMANIZE_PASS_ENABLED="false" to opt out (e.g. if hitting Vercel
-  // timeout). With thinkingBudget=0 + parallel side calls, this fits in 120s.
-  if (process.env.HUMANIZE_PASS_ENABLED !== "false") {
+  // Humanize pass disabled by default — it injected slang/quirks that made
+  // tone unprofessional and produced repeated phrasing across bullets.
+  // Opt-in via HUMANIZE_PASS_ENABLED="true".
+  if (process.env.HUMANIZE_PASS_ENABLED === "true") {
     try {
       parsed.tailoredResume = await humanizeResumeContent(parsed.tailoredResume);
     } catch (e) {
@@ -410,9 +395,62 @@ Return JSON:
   }
 }
 
-// Use original resume as the structural source of truth. Only let the model
-// contribute additions: refined summary, extra bullets per role, extra skills.
-// Never let it drop roles, projects, certifications, or education.
+// ─── Caps & dedup ─────────────────────────────────────────────────────────────
+// Tight, professional output: enforce role/project/skill caps and remove
+// near-duplicate bullets so the resume reads clean and non-repetitive.
+
+const MAX_BULLETS_PER_ROLE = 5;
+const MAX_BULLETS_PER_PROJECT = 4;
+const MAX_SKILL_GROUPS = 6;
+const MAX_ITEMS_PER_GROUP = 10;
+const MAX_BULLET_WORDS = 28;
+
+function normalizeForDedup(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function tokenSet(s: string): Set<string> {
+  return new Set(normalizeForDedup(s).split(" ").filter((w) => w.length > 2));
+}
+
+function isNearDuplicate(a: string, b: string): boolean {
+  const na = normalizeForDedup(a);
+  const nb = normalizeForDedup(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const shorter = na.length <= nb.length ? na : nb;
+  const longer = na.length <= nb.length ? nb : na;
+  if (shorter.length >= 24 && longer.includes(shorter)) return true;
+  const ta = tokenSet(a);
+  const tb = tokenSet(b);
+  const minSize = Math.min(ta.size, tb.size);
+  if (minSize < 4) return false;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  return inter / minSize > 0.7;
+}
+
+function dedupBullets(bullets: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of bullets) {
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim();
+    if (trimmed.length < 4) continue;
+    if (out.some((kept) => isNearDuplicate(kept, trimmed))) continue;
+    out.push(trimmed);
+  }
+  return out;
+}
+
+function truncateBullet(b: string): string {
+  const words = b.split(/\s+/);
+  if (words.length <= MAX_BULLET_WORDS) return b;
+  return words.slice(0, MAX_BULLET_WORDS).join(" ").replace(/[,;:]+$/, "") + ".";
+}
+
+// Use original resume as structural source of truth. Take the model's tailored
+// bullets/skills as the content (it is told to rewrite, not append), then dedup
+// and cap so repetition and skills inflation cannot leak through.
 function restoreMissingFields(tailored: ResumeData, original: ResumeData): ResumeData {
   const cleanBullets = (arr: unknown): string[] =>
     Array.isArray(arr) ? arr.filter((b): b is string => typeof b === "string" && b.trim().length > 0) : [];
@@ -436,45 +474,70 @@ function restoreMissingFields(tailored: ResumeData, original: ResumeData): Resum
 
   const mergedExperience: ResumeData["experience"] = original.experience.map((orig) => {
     const t = findTailoredRole(orig);
-    const origBullets = cleanBullets(orig.bullets);
     const tailoredBullets = cleanBullets(t?.bullets);
-    const seen = new Set(origBullets.map((b) => b.trim().toLowerCase()));
-    const newBullets = tailoredBullets.filter((b) => !seen.has(b.trim().toLowerCase()));
-    return { ...orig, bullets: [...origBullets, ...newBullets] };
+    const origBullets = cleanBullets(orig.bullets);
+    // Prefer tailored content; fall back to original if model returned nothing.
+    const source = tailoredBullets.length ? tailoredBullets : origBullets;
+    const deduped = dedupBullets(source).map(truncateBullet);
+    const capped = deduped.slice(0, MAX_BULLETS_PER_ROLE);
+    return { ...orig, bullets: capped };
   });
 
   const mergedProjects: ResumeData["projects"] = original.projects.map((orig) => {
     const t = findTailoredProject(orig);
-    const origBullets = cleanBullets(orig.bullets);
     const tailoredBullets = cleanBullets(t?.bullets);
-    const seen = new Set(origBullets.map((b) => b.trim().toLowerCase()));
-    const newBullets = tailoredBullets.filter((b) => !seen.has(b.trim().toLowerCase()));
-    return { ...orig, bullets: [...origBullets, ...newBullets] };
+    const origBullets = cleanBullets(orig.bullets);
+    const source = tailoredBullets.length ? tailoredBullets : origBullets;
+    const deduped = dedupBullets(source).map(truncateBullet);
+    const capped = deduped.slice(0, MAX_BULLETS_PER_PROJECT);
+    return { ...orig, bullets: capped };
   });
 
-  // Skills: union original + new categories/items the model added.
+  // Skills: prefer the model's tailored list (it was told to keep tight & credible).
+  // Fall back to original. Then case-insensitively dedup items, dedup across
+  // groups (item only appears in its first group), and cap groups + items.
   const mergedSkills: ResumeData["skills"] = (() => {
-    const map = new Map<string, Set<string>>();
-    for (const group of original.skills || []) {
-      const key = (group.category || "Skills").trim();
-      if (!map.has(key)) map.set(key, new Set());
-      for (const item of group.items || []) if (item?.trim()) map.get(key)!.add(item.trim());
+    const sourceGroups =
+      tailored.skills && tailored.skills.length ? tailored.skills : original.skills || [];
+
+    const seenItems = new Set<string>();
+    const groups: Array<{ category: string; items: string[] }> = [];
+
+    for (const group of sourceGroups) {
+      const category = (group.category || "Skills").trim();
+      if (!category) continue;
+      const items: string[] = [];
+      const itemsSeen = new Set<string>();
+      for (const raw of group.items || []) {
+        const item = typeof raw === "string" ? raw.trim() : "";
+        if (!item) continue;
+        const key = item.toLowerCase();
+        if (seenItems.has(key) || itemsSeen.has(key)) continue;
+        itemsSeen.add(key);
+        seenItems.add(key);
+        items.push(item);
+        if (items.length >= MAX_ITEMS_PER_GROUP) break;
+      }
+      if (items.length) groups.push({ category, items });
+      if (groups.length >= MAX_SKILL_GROUPS) break;
     }
-    for (const group of tailored.skills || []) {
-      const key = (group.category || "Skills").trim();
-      if (!map.has(key)) map.set(key, new Set());
-      for (const item of group.items || []) if (item?.trim()) map.get(key)!.add(item.trim());
-    }
-    return Array.from(map.entries()).map(([category, items], i) => ({
-      id: `skill-${i + 1}`,
-      category,
-      items: Array.from(items),
-    }));
+
+    return groups.map((g, i) => ({ id: `skill-${i + 1}`, ...g }));
+  })();
+
+  // Summary: prefer tailored, else original. Cap at ~3 sentences / 80 words.
+  const rawSummary = tailored.summary?.trim() ? tailored.summary : original.summary || "";
+  const summary = (() => {
+    if (!rawSummary) return original.summary;
+    const sentences = rawSummary.match(/[^.!?]+[.!?]+/g) || [rawSummary];
+    const trimmed = sentences.slice(0, 3).join(" ").trim();
+    const words = trimmed.split(/\s+/);
+    return words.length > 80 ? words.slice(0, 80).join(" ") + "." : trimmed;
   })();
 
   return {
     personalInfo: { ...original.personalInfo, ...tailored.personalInfo },
-    summary: tailored.summary?.trim() ? tailored.summary : original.summary,
+    summary,
     experience: mergedExperience,
     education: original.education,
     skills: mergedSkills.length ? mergedSkills : original.skills,
@@ -622,18 +685,17 @@ export async function getSectionSuggestion(
   content: string,
   context?: string
 ): Promise<string[]> {
-  const prompt = `Rewrite this ${section} section to read as human-written and defeat AI text detectors (GPTZero, Originality.ai, Copyleaks, ZeroGPT).
+  const prompt = `Rewrite this ${section} section in a clean, professional, recruiter-ready tone.
 ${context ? `Target role: ${context}` : ""}
 Current content: ${content}
 
 Rules:
-- BURSTY rhythm — alternate short fragments with longer sentences
-- NON-PARALLEL openings — don't always start with a verb
-- IMPERFECT numbers — "around 40%", "~150ms"
-- Domain slang OK: "wired up", "stood up", "ripped out", "moved off", "shipped behind a flag"
-- One stylistic quirk per version: em-dash, colon clause, fragment, or parenthetical
-- BANNED: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, robust, innovative, dynamic, passionate, results-driven, thought leader, holistic, seamlessly, proactively, transformative, comprehensive, ensured, facilitated, implemented, in order to, as well as, key stakeholders, deliverables, best practices
-- PREFERRED verbs: built, wrote, led, ran, fixed, shipped, cut, grew, reduced, added, improved, owned, drove, replaced, rewrote, tuned
+- Tight and non-repetitive. Each version is a distinct angle, not a paraphrase.
+- Strong resume verbs (built, led, designed, owned, shipped, delivered, reduced, improved, managed, drove, scaled, migrated, automated).
+- One concrete detail per bullet where credible (number, tool, scope, system).
+- Complete phrases. No slang, fragments, parentheticals, or colon-led quirks.
+- Plain ASCII punctuation only.
+- BANNED: spearheaded, leveraged, synergized, utilized, orchestrated, streamlined, cutting-edge, robust, innovative, dynamic, passionate, results-driven, thought leader, holistic, seamlessly, proactively, transformative, comprehensive, ensured, facilitated, in order to, as well as, key stakeholders, deliverables, best practices.
 
 Return ONLY a JSON array of 3 distinctly different rewrites:
 ["version1", "version2", "version3"]`;
