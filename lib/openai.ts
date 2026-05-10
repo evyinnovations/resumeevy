@@ -161,11 +161,17 @@ STRUCTURE (must hold):
 - personalInfo, education, certifications: copy through unchanged.
 - summary: always include. 2-3 sentences max. Plain prose aligned to the JD. No buzzwords, no first-person pronouns.
 
-CONTENT RULES (this is what fixes the bloat):
-- Each experience role: 3 to 5 bullets. Hard cap 5. Pick the strongest, most JD-relevant content. Rewrite weak originals, drop redundant ones, add missing JD-aligned ones. Every bullet is a DISTINCT accomplishment — no two bullets in the same role may describe the same work, the same tool stack, or the same outcome.
+CONTENT RULES (depth without repetition):
+- Each experience role MUST have substantive depth so a recruiter can immediately see seniority and scope.
+  - Junior / early-career roles (0-2 yrs, intern, associate, junior title): 6 to 8 bullets.
+  - Mid-level roles (3-5 yrs, software engineer, analyst, etc.): 8 to 10 bullets.
+  - Senior / lead / staff / principal / manager / architect / director roles: 10 to 13 bullets. Hard cap 13.
+  - Infer the tier from job title, dates, and scope clues. When in doubt, lean toward the higher count for the candidate's most recent / most senior role and toward the lower count for older or junior roles.
+- Pick the strongest, most JD-relevant content. Rewrite weak originals, drop redundant ones, add missing JD-aligned ones. Every bullet is a DISTINCT accomplishment — no two bullets in the same role may describe the same work, the same tool stack, or the same outcome.
+- Within a role, cover a mix of: technical execution (what was built/shipped), measurable impact (numbers, %, latency, cost, revenue), scope and ownership (team size, systems, cross-functional collaboration), leadership / mentoring (for senior roles), and architecture / design decisions (for senior roles).
 - Across the whole resume, do NOT restate the same achievement in two roles. If two roles share a theme (e.g. CI/CD ownership), each must show a different angle.
-- If an input role has empty bullets, generate 3-4 fresh role-appropriate bullets aligned to the JD.
-- Each project: 2 to 4 bullets, same anti-repetition rules.
+- If an input role has empty bullets, generate role-appropriate bullets at the count for that role's tier.
+- Each project: 4 to 6 bullets. Same distinct-accomplishment rule. Cover: what the project does, key technical decisions, your specific contribution, measurable outcome.
 - Each bullet under 25 words. Lead with a strong verb or quantified outcome. Include one concrete detail (number, tool, scope, system) where credible.
 
 SKILLS (this is what fixes inflation):
@@ -399,11 +405,49 @@ Return JSON:
 // Tight, professional output: enforce role/project/skill caps and remove
 // near-duplicate bullets so the resume reads clean and non-repetitive.
 
-const MAX_BULLETS_PER_ROLE = 5;
-const MAX_BULLETS_PER_PROJECT = 4;
+const MAX_BULLETS_PER_ROLE_SENIOR = 13;
+const MAX_BULLETS_PER_ROLE_MID = 10;
+const MAX_BULLETS_PER_ROLE_JUNIOR = 8;
+const MAX_BULLETS_PER_PROJECT = 6;
 const MAX_SKILL_GROUPS = 6;
 const MAX_ITEMS_PER_GROUP = 10;
 const MAX_BULLET_WORDS = 28;
+
+type SeniorityTier = "junior" | "mid" | "senior";
+
+const SENIOR_TITLE_RX =
+  /\b(senior|sr\.?|staff|principal|lead|architect|head|director|vp|vice\s*president|chief|cto|cio|manager|mgr|founder|owner|president)\b/i;
+const JUNIOR_TITLE_RX =
+  /\b(intern|trainee|apprentice|junior|jr\.?|associate|entry|graduate|grad|assistant)\b/i;
+
+function roleSeniority(role: { title?: string; startDate?: string; endDate?: string; current?: boolean }): SeniorityTier {
+  const title = role.title || "";
+  if (SENIOR_TITLE_RX.test(title)) return "senior";
+  if (JUNIOR_TITLE_RX.test(title)) return "junior";
+
+  const parseYear = (s?: string) => {
+    if (!s) return undefined;
+    const m = s.match(/(19|20)\d{2}/);
+    return m ? parseInt(m[0], 10) : undefined;
+  };
+  const start = parseYear(role.startDate);
+  const end = role.current ? new Date().getFullYear() : parseYear(role.endDate) ?? new Date().getFullYear();
+  if (start && end) {
+    const years = end - start;
+    if (years >= 5) return "senior";
+    if (years >= 2) return "mid";
+    return "junior";
+  }
+  return "mid";
+}
+
+function bulletCapForRole(role: { title?: string; startDate?: string; endDate?: string; current?: boolean }): number {
+  switch (roleSeniority(role)) {
+    case "senior": return MAX_BULLETS_PER_ROLE_SENIOR;
+    case "mid":    return MAX_BULLETS_PER_ROLE_MID;
+    case "junior": return MAX_BULLETS_PER_ROLE_JUNIOR;
+  }
+}
 
 function normalizeForDedup(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -476,10 +520,13 @@ function restoreMissingFields(tailored: ResumeData, original: ResumeData): Resum
     const t = findTailoredRole(orig);
     const tailoredBullets = cleanBullets(t?.bullets);
     const origBullets = cleanBullets(orig.bullets);
-    // Prefer tailored content; fall back to original if model returned nothing.
-    const source = tailoredBullets.length ? tailoredBullets : origBullets;
-    const deduped = dedupBullets(source).map(truncateBullet);
-    const capped = deduped.slice(0, MAX_BULLETS_PER_ROLE);
+    // Combine tailored + original, dedup, then cap by tier.
+    const combined = tailoredBullets.length
+      ? [...tailoredBullets, ...origBullets]
+      : origBullets;
+    const deduped = dedupBullets(combined).map(truncateBullet);
+    const cap = bulletCapForRole(orig);
+    const capped = deduped.slice(0, cap);
     return { ...orig, bullets: capped };
   });
 
