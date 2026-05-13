@@ -162,11 +162,12 @@ STRUCTURE (must hold):
 - summary: always include. 2-3 sentences max. Plain prose aligned to the JD. No buzzwords, no first-person pronouns.
 
 CONTENT RULES (depth without repetition):
-- Each experience role MUST have substantive depth so a recruiter can immediately see seniority and scope.
-  - Junior / early-career roles (0-2 yrs, intern, associate, junior title): 6 to 8 bullets.
-  - Mid-level roles (3-5 yrs, software engineer, analyst, etc.): 8 to 10 bullets.
-  - Senior / lead / staff / principal / manager / architect / director roles: 10 to 13 bullets. Hard cap 13.
+- Each experience role MUST have substantive depth so a recruiter can immediately see seniority and scope. The minimum count is mandatory — output with fewer bullets than the minimum is unusable.
+  - Junior / early-career roles (0-2 yrs, intern, associate, junior title): MINIMUM 6 bullets, target 7, maximum 8.
+  - Mid-level roles (3-5 yrs, software engineer, analyst, etc.): MINIMUM 8 bullets, target 9, maximum 10.
+  - Senior / lead / staff / principal / manager / architect / director roles: MINIMUM 10 bullets, target 12, maximum 13.
   - Infer the tier from job title, dates, and scope clues. When in doubt, lean toward the higher count for the candidate's most recent / most senior role and toward the lower count for older or junior roles.
+- The total tailored resume should fill roughly two pages for a senior candidate, one to one-and-a-half for mid-level, one for junior. Do not under-produce.
 - Pick the strongest, most JD-relevant content. Rewrite weak originals, drop redundant ones, add missing JD-aligned ones. Every bullet is a DISTINCT accomplishment — no two bullets in the same role may describe the same work, the same tool stack, or the same outcome.
 - Within a role, cover a mix of: technical execution (what was built/shipped), measurable impact (numbers, %, latency, cost, revenue), scope and ownership (team size, systems, cross-functional collaboration), leadership / mentoring (for senior roles), and architecture / design decisions (for senior roles).
 - Across the whole resume, do NOT restate the same achievement in two roles. If two roles share a theme (e.g. CI/CD ownership), each must show a different angle.
@@ -457,6 +458,9 @@ function tokenSet(s: string): Set<string> {
   return new Set(normalizeForDedup(s).split(" ").filter((w) => w.length > 2));
 }
 
+// Only flag true clones. Loose thresholds so distinct bullets that happen to
+// share tech keywords (e.g. multiple Jenkins / Docker / microservice bullets
+// in a senior role) are NOT collapsed.
 function isNearDuplicate(a: string, b: string): boolean {
   const na = normalizeForDedup(a);
   const nb = normalizeForDedup(b);
@@ -464,14 +468,16 @@ function isNearDuplicate(a: string, b: string): boolean {
   if (na === nb) return true;
   const shorter = na.length <= nb.length ? na : nb;
   const longer = na.length <= nb.length ? nb : na;
-  if (shorter.length >= 24 && longer.includes(shorter)) return true;
+  // Substring rule: only when one bullet is essentially contained inside the
+  // other (≥40 chars overlap), not just shares a phrase.
+  if (shorter.length >= 40 && longer.includes(shorter)) return true;
   const ta = tokenSet(a);
   const tb = tokenSet(b);
   const minSize = Math.min(ta.size, tb.size);
-  if (minSize < 4) return false;
+  if (minSize < 6) return false;
   let inter = 0;
   for (const t of ta) if (tb.has(t)) inter++;
-  return inter / minSize > 0.7;
+  return inter / minSize > 0.85;
 }
 
 function dedupBullets(bullets: string[]): string[] {
@@ -520,14 +526,26 @@ function restoreMissingFields(tailored: ResumeData, original: ResumeData): Resum
     const t = findTailoredRole(orig);
     const tailoredBullets = cleanBullets(t?.bullets);
     const origBullets = cleanBullets(orig.bullets);
-    // Combine tailored + original, dedup, then cap by tier.
-    const combined = tailoredBullets.length
-      ? [...tailoredBullets, ...origBullets]
-      : origBullets;
-    const deduped = dedupBullets(combined).map(truncateBullet);
+    // Prefer the model's tailored bullets (it was told to write the right
+    // count for the role's seniority tier). Only fall back to originals if
+    // the model returned nothing — combining the two caused paraphrased
+    // bullets to collapse during dedup and shrank senior roles too much.
+    const source = tailoredBullets.length ? tailoredBullets : origBullets;
+    const deduped = dedupBullets(source).map(truncateBullet);
     const cap = bulletCapForRole(orig);
-    const capped = deduped.slice(0, cap);
-    return { ...orig, bullets: capped };
+    // If after dedup the role has fewer bullets than the cap and we have
+    // unused originals, top up with originals that are not near-duplicates.
+    let bullets = deduped.slice(0, cap);
+    if (bullets.length < cap && origBullets.length && tailoredBullets.length) {
+      for (const ob of origBullets) {
+        if (bullets.length >= cap) break;
+        const obTrim = ob.trim();
+        if (!obTrim) continue;
+        if (bullets.some((kept) => isNearDuplicate(kept, obTrim))) continue;
+        bullets.push(truncateBullet(obTrim));
+      }
+    }
+    return { ...orig, bullets };
   });
 
   const mergedProjects: ResumeData["projects"] = original.projects.map((orig) => {
