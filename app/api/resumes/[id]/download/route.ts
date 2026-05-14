@@ -196,8 +196,8 @@ function generatePDF(resume: {
       }
       const isKw = isKeywordToken(tok, kwSet);
       pdf.setFont("helvetica", isKw ? "bold" : "normal");
-      if (isKw) pdf.setTextColor(26, 40, 193);
-      else pdf.setTextColor(...baseColor);
+      // Keywords: bold, same dark text color as body. Bold alone is the cue.
+      pdf.setTextColor(...baseColor);
       const w = pdf.getTextWidth(tok);
       if (cx + w > x + maxWidth) { y += lineH; cx = x; checkPageBreak(lineH); }
       pdf.text(tok, cx, y);
@@ -307,7 +307,7 @@ function generatePDF(resume: {
           }
           const isKw = isKeywordToken(tok, kwSet);
           pdf.setFont("helvetica", isKw ? "bold" : "normal");
-          pdf.setTextColor(...(isKw ? [26, 40, 193] as [number, number, number] : [50, 50, 50] as [number, number, number]));
+          pdf.setTextColor(50, 50, 50);
           pdf.text(tok, cx, cy);
           cx += pdf.getTextWidth(tok);
         }
@@ -445,7 +445,8 @@ async function generateDocx(resume: {
         bold: isKw,
         italics: opts.italics,
         size,
-        color: isKw ? BLUE : color,
+        // Keywords: bold, same dark text color. Bold alone is the cue.
+        color,
         font: "Calibri",
       });
     });
